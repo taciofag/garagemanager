@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: garage_api
+    environment:
+      APP_ENV: production
+      SECRET_KEY: changeme-in-prod
+      DATABASE_URL: sqlite+aiosqlite:///./garage_manager.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+    depends_on:
+      - db
+
+  scheduler:
+    build: .
+    container_name: garage_scheduler
+    environment:
+      API_BASE_URL: http://api:8000
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@garage.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+    depends_on:
+      - api
+    command: >
+      bash -c "
+        while true; do
+          now_min=$$(date +%H)
+          now_min=$$((now_min * 60 + $$(date +%M)))
+          target=$$((8 * 60))
+          if [ $$now_min -lt $$target ]; then
+            sleep_sec=$$(( (target - now_min) * 60 ))
+          else
+            sleep_sec=$$(( ((24 * 60 - now_min) + target) * 60 ))
+          fi
+          sleep $$sleep_sec
+          python -m app.scripts.run_billing || true
+        done
+      "
+
+  db:
+    image: postgres:15-alpine
+    container_name: garage_db
+    environment:
+      POSTGRES_USER: garage
+      POSTGRES_PASSWORD: garage
+      POSTGRES_DB: garage
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U garage"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
