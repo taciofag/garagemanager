@@ -1,4 +1,5 @@
 import pytest
+import uuid
 
 from app.services.security import create_access_token
 
@@ -19,9 +20,11 @@ async def test_vehicle_flow(client, admin_user):
     token = create_access_token(admin_user.email, ["user", "admin"])
     headers = {"Authorization": f"Bearer {token}"}
 
+    seed = uuid.uuid4()
     driver_payload = {
+        "id": f"DRV-{seed.hex[:4].upper()}",
         "name": "Driver API",
-        "cpf": "222.222.222-22",
+        "cpf": f"222.222.222-{seed.int % 90 + 10:02d}",
         "phone": "11999990000",
         "start_date": "2024-01-01",
         "weekly_rate": "450.00",
@@ -34,9 +37,10 @@ async def test_vehicle_flow(client, admin_user):
     driver_id = driver_resp.json()["id"]
 
     vehicle_payload = {
-        "plate": "API1234",
-        "renavam": "APIRENAVAM",
-        "vin": "VINAPI1234567",
+        "id": f"CAR-{seed.hex[:6].upper()}",
+        "plate": f"API{seed.hex[:4].upper()}",
+        "renavam": f"REN{seed.hex[:8].upper()}",
+        "vin": f"VIN{uuid.uuid4().hex[:14].upper()}",
         "manufacture_year": 2020,
         "model_year": 2021,
         "make": "API",

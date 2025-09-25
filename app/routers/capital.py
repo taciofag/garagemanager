@@ -97,7 +97,7 @@ async def delete_capital_entry(
     entry = await repo.get(entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Capital entry not found")
-    await repo.delete(entry)
+    await repo.delete_capital_entry(entry)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

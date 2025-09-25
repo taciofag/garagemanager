@@ -2,6 +2,7 @@
 import { format } from 'date-fns';
 
 import { SummaryApi, VehiclesApi, RentPaymentsApi } from '../api/resources';
+import { vehicleStatusLabel } from '../utils/labels';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
 import { StatCard } from '../components/StatCard';
@@ -60,7 +61,11 @@ const Dashboard: React.FC = () => {
                 { header: 'ID', key: 'id' },
                 { header: 'Modelo', key: 'model' },
                 { header: 'Marca', key: 'make' },
-                { header: 'Status', key: 'status' },
+                {
+                  header: 'Status',
+                  key: 'status',
+                  render: (item) => vehicleStatusLabel(item.status),
+                },
                 {
                   header: 'Compra',
                   key: 'acquisition_price',

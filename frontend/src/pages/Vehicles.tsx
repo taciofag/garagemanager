@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import InputMask from 'react-input-mask';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -8,7 +8,8 @@ import { VehiclesApi } from '../api/resources';
 import { DocumentManager } from '../components/DocumentManager';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
-import type { Vehicle } from '../types';
+import { VehicleFinancialModal } from '../components/VehicleFinancialModal';
+import type { Vehicle, VehicleFinancialSummary } from '../types';
 import { vehicleStatusLabel } from '../utils/labels';
 
 interface VehicleForm {
@@ -54,10 +55,26 @@ const formatPlateForMask = (value: string | undefined) => {
 
 const Vehicles: React.FC = () => {
   const queryClient = useQueryClient();
-  const vehiclesQuery = useQuery({ queryKey: ['vehicles'], queryFn: () => VehiclesApi.list() });
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [selectedVehicleLabel, setSelectedVehicleLabel] = useState<string>('');
   const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [financialOpen, setFinancialOpen] = useState(false);
+  const [financialVehicleId, setFinancialVehicleId] = useState<string | null>(null);
+
+  const vehiclesQuery = useQuery({ queryKey: ['vehicles'], queryFn: () => VehiclesApi.list() });
+  const financialQuery = useQuery({
+    queryKey: ['vehicle-financial', financialVehicleId],
+    queryFn: () => VehiclesApi.financial(financialVehicleId as string),
+    enabled: Boolean(financialVehicleId),
+  });
+
+  useEffect(() => {
+    if (financialVehicleId) {
+      setFinancialOpen(true);
+    } else {
+      setFinancialOpen(false);
+    }
+  }, [financialVehicleId]);
 
   const {
     control,
@@ -370,6 +387,13 @@ const Vehicles: React.FC = () => {
         emptyMessage="Selecione um veículo na tabela para anexar documentos."
       />
 
+      <VehicleFinancialModal
+        isOpen={financialOpen}
+        onClose={() => setFinancialVehicleId(null)}
+        data={financialQuery.data as VehicleFinancialSummary | undefined}
+        isLoading={financialQuery.isLoading}
+      />
+
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-700">Veículos cadastrados</h2>
@@ -412,6 +436,12 @@ const Vehicles: React.FC = () => {
                       }}
                     >
                       Documentos
+                    </button>
+                    <button
+                      className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"
+                      onClick={() => setFinancialVehicleId(item.id)}
+                    >
+                      Resumo financeiro
                     </button>
                     <button
                       className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"

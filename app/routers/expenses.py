@@ -97,7 +97,7 @@ async def delete_expense(
     expense = await repo.get(expense_id)
     if not expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    await repo.delete(expense)
+    await repo.delete_expense(expense)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

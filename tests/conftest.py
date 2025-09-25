@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -61,6 +62,11 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture()
 async def admin_user(session: AsyncSession) -> User:
+    result = await session.execute(select(User).where(User.email == "admin@test.com"))
+    user = result.scalars().first()
+    if user:
+        return user
+
     user = User(
         email="admin@test.com",
         hashed_password=get_password_hash("password123"),
@@ -75,33 +81,43 @@ async def admin_user(session: AsyncSession) -> User:
 
 @pytest.fixture()
 async def sample_vehicle(session: AsyncSession) -> Vehicle:
-    driver = Driver(
-        id="DRV-TST",
-        name="Driver Test",
-        cpf="000.000.000-00",
-        phone=None,
-        start_date=date.today(),
-        weekly_rate=Decimal("400"),
-        commission_pct=Decimal("0.1"),
-        deposit_held=Decimal("500"),
-        status=DriverStatus.ACTIVE,
-    )
-    session.add(driver)
-    vehicle = Vehicle(
-        id="CAR-TST",
-        plate="TEST123",
-        renavam="RENATEST",
-        vin="VINTEST123456",
-        manufacture_year=2021,
-        model_year=2022,
-        make="Test",
-        model="Model",
-        color="Blue",
-        acquisition_date=date.today(),
-        acquisition_price=Decimal("30000"),
-        current_driver_id=None,
-    )
-    session.add(vehicle)
+    driver = await session.get(Driver, "DRV-TST")
+    if driver is None:
+        driver = Driver(
+            id="DRV-TST",
+            name="Driver Test",
+            cpf="000.000.000-00",
+            phone=None,
+            start_date=date.today(),
+            weekly_rate=Decimal("400"),
+            commission_pct=Decimal("0.1"),
+            deposit_held=Decimal("500"),
+            status=DriverStatus.ACTIVE,
+        )
+        session.add(driver)
+
+    vehicle = await session.get(Vehicle, "CAR-TST")
+    if vehicle is None:
+        vehicle = Vehicle(
+            id="CAR-TST",
+            plate="TEST123",
+            renavam="RENATEST",
+            vin="VINTEST123456",
+            manufacture_year=2021,
+            model_year=2022,
+            make="Test",
+            model="Model",
+            color="Blue",
+            acquisition_date=date.today(),
+            acquisition_price=Decimal("30000"),
+            current_driver_id=None,
+        )
+        session.add(vehicle)
+
     await session.commit()
-    return vehicle
+    vehicle_obj = await session.get(Vehicle, "CAR-TST")
+    if vehicle_obj is not None:
+        await session.refresh(vehicle_obj, attribute_names=["expenses"])
+    return vehicle_obj
+
 

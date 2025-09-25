@@ -31,6 +31,35 @@ export interface Vehicle {
   roi?: string;
 }
 
+export interface VehicleRentalSummary {
+  id: string;
+  driver_id: string;
+  start_date: string;
+  end_date?: string;
+  status: 'Active' | 'Paused' | 'Closed';
+  payments: RentPayment[];
+  total_due: string;
+  total_paid: string;
+  total_late_fee: string;
+}
+
+export interface VehicleFinancialSummary {
+  vehicle: Vehicle;
+  acquisition_price: string;
+  total_expenses: string;
+  expenses: Expense[];
+  rentals: VehicleRentalSummary[];
+  total_rent_paid: string;
+  total_rent_due: string;
+  total_late_fee: string;
+  sale_price?: string;
+  sale_fees?: string;
+  sale_net?: string;
+  total_cost: string;
+  total_income: string;
+  profit?: string;
+}
+
 export interface Vendor {
   id: string;
   name: string;

@@ -6,8 +6,11 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from ..models.rental import RentalStatus
 from ..models.vehicle import VehicleStatus
 from .common import DecimalModel
+from .expense import ExpenseRead
+from .rent_payment import RentPaymentRead
 
 
 class VehicleBase(DecimalModel):
@@ -69,5 +72,43 @@ class VehicleRead(VehicleBase):
 
     model_config = {
         "from_attributes": True,
+        "json_encoders": {Decimal: lambda v: str(v)},
+    }
+
+
+class VehicleRentalSummary(BaseModel):
+    id: str
+    driver_id: str
+    start_date: date
+    end_date: Optional[date]
+    status: RentalStatus
+    payments: list[RentPaymentRead]
+    total_due: Decimal
+    total_paid: Decimal
+    total_late_fee: Decimal
+
+    model_config = {
+        "from_attributes": True,
+        "json_encoders": {Decimal: lambda v: str(v)},
+    }
+
+
+class VehicleFinancialSummary(BaseModel):
+    vehicle: VehicleRead
+    acquisition_price: Decimal
+    total_expenses: Decimal
+    expenses: list[ExpenseRead]
+    rentals: list[VehicleRentalSummary]
+    total_rent_paid: Decimal
+    total_rent_due: Decimal
+    total_late_fee: Decimal
+    sale_price: Optional[Decimal]
+    sale_fees: Optional[Decimal]
+    sale_net: Optional[Decimal]
+    total_cost: Decimal
+    total_income: Decimal
+    profit: Optional[Decimal]
+
+    model_config = {
         "json_encoders": {Decimal: lambda v: str(v)},
     }

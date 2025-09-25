@@ -1,4 +1,5 @@
 ﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { VendorsApi } from '../api/resources';
@@ -14,17 +15,37 @@ interface VendorForm {
   notes?: string;
 }
 
+const buildDefaultValues = (): VendorForm => ({
+  name: '',
+  type: 'OTHER',
+  phone: '',
+  notes: '',
+});
 
 const Vendors: React.FC = () => {
   const queryClient = useQueryClient();
   const vendorsQuery = useQuery({ queryKey: ['vendors'], queryFn: () => VendorsApi.list() });
-  const { register, handleSubmit, reset } = useForm<VendorForm>({ defaultValues: { type: 'OTHER' } });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const { register, handleSubmit, reset } = useForm<VendorForm>({ defaultValues: buildDefaultValues() });
+
+  const handleResetForm = () => {
+    reset(buildDefaultValues());
+    setEditingId(null);
+  };
 
   const createVendor = useMutation({
     mutationFn: (payload: Partial<Vendor>) => VendorsApi.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendors'] });
-      reset({ type: 'OTHER' });
+      handleResetForm();
+    },
+  });
+
+  const updateVendor = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Partial<Vendor> }) => VendorsApi.update(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendors'] });
+      handleResetForm();
     },
   });
 
@@ -33,9 +54,26 @@ const Vendors: React.FC = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vendors'] }),
   });
 
-  const onSubmit = (data: VendorForm) => {
-    createVendor.mutate(data);
+  const handleEdit = (vendor: Vendor) => {
+    setEditingId(vendor.id);
+    reset({
+      name: vendor.name,
+      type: vendor.type,
+      phone: vendor.phone ?? '',
+      notes: vendor.notes ?? '',
+    });
   };
+
+  const onSubmit = (data: VendorForm) => {
+    if (editingId) {
+      updateVendor.mutate({ id: editingId, payload: data });
+    } else {
+      createVendor.mutate(data);
+    }
+  };
+
+  const isSaving = createVendor.isPending || updateVendor.isPending;
+  const isEditing = Boolean(editingId);
 
   return (
     <div className="space-y-6">
@@ -45,7 +83,7 @@ const Vendors: React.FC = () => {
       </header>
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-slate-700">Novo fornecedor</h2>
+        <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar fornecedor' : 'Novo fornecedor'}</h2>
         <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit(onSubmit)}>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Nome</label>
@@ -69,14 +107,23 @@ const Vendors: React.FC = () => {
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Notas</label>
             <textarea className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('notes')} />
           </div>
-          <div className="md:col-span-3">
+          <div className="md:col-span-3 flex flex-wrap items-center gap-3">
             <button
               type="submit"
-              disabled={createVendor.isPending}
+              disabled={isSaving}
               className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-70"
             >
-              {createVendor.isPending ? 'Salvando...' : 'Cadastrar fornecedor'}
+              {isSaving ? 'Salvando...' : isEditing ? 'Atualizar fornecedor' : 'Cadastrar fornecedor'}
             </button>
+            {isEditing ? (
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Cancelar edição
+              </button>
+            ) : null}
           </div>
         </form>
       </section>
@@ -103,16 +150,27 @@ const Vendors: React.FC = () => {
                 header: 'Ações',
                 key: 'actions',
                 render: (item) => (
-                  <button
-                    className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                    onClick={() => {
-                      if (confirm(`Excluir fornecedor ${item.name}?`)) {
-                        deleteVendor.mutate(item.id);
-                      }
-                    }}
-                  >
-                    Excluir
-                  </button>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <button
+                      className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"
+                      onClick={() => handleEdit(item)}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      className="rounded-md border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50"
+                      onClick={() => {
+                        if (confirm('Excluir fornecedor?')) {
+                          if (editingId === item.id) {
+                            handleResetForm();
+                          }
+                          deleteVendor.mutate(item.id);
+                        }
+                      }}
+                    >
+                      Excluir
+                    </button>
+                  </div>
                 ),
               },
             ]}

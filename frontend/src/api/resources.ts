@@ -11,6 +11,7 @@ import {
   SummaryMetrics,
   Vehicle,
   DocumentItem,
+  VehicleFinancialSummary,
 } from '../types';
 
 export const VehiclesApi = {
@@ -22,6 +23,8 @@ export const VehiclesApi = {
   remove: async (id: string) => api.delete(`/vehicles/${id}`),
   sell: async (id: string, payload: { sale_date: string; sale_price: string; sale_fees: string }) =>
     (await api.post<Vehicle>(`/vehicles/${id}/sell`, payload)).data,
+  financial: async (id: string) =>
+    (await api.get<VehicleFinancialSummary>(`/vehicles/${id}/financial`)).data,
 };
 
 export const DriversApi = {

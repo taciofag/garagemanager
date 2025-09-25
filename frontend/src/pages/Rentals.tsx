@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { DriversApi, RentalsApi, VehiclesApi } from '../api/resources';
@@ -19,6 +19,16 @@ interface RentalForm {
   notes?: string;
 }
 
+const buildDefaultValues = (): RentalForm => ({
+  vehicle_id: '',
+  driver_id: '',
+  start_date: new Date().toISOString().slice(0, 10),
+  weekly_rate: 0,
+  deposit: 0,
+  billing_day: 'Mon',
+  notes: '',
+});
+
 const Rentals: React.FC = () => {
   const queryClient = useQueryClient();
 
@@ -26,6 +36,8 @@ const Rentals: React.FC = () => {
   const [selectedRentalId, setSelectedRentalId] = useState<string | null>(null);
   const [selectedRentalLabel, setSelectedRentalLabel] = useState<string>('');
   const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   const vehiclesQuery = useQuery({
     queryKey: ['vehicles', 'all'],
     queryFn: () => VehiclesApi.list({ page_size: 100 }),
@@ -35,24 +47,74 @@ const Rentals: React.FC = () => {
     queryFn: () => DriversApi.list({ page_size: 100 }),
   });
 
+
+  const vehiclesById = useMemo(() => {
+    const map: Record<string, { plate?: string; label: string }> = {};
+    vehiclesQuery.data?.items.forEach((vehicle) => {
+      const label = [vehicle.make, vehicle.model]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+        || vehicle.model
+        || vehicle.make
+        || vehicle.id;
+      map[vehicle.id] = {
+        plate: vehicle.plate ?? '',
+        label,
+      };
+    });
+    return map;
+  }, [vehiclesQuery.data]);
+
+  const driversById = useMemo(() => {
+    const map: Record<string, string> = {};
+    driversQuery.data?.items.forEach((driver) => {
+      map[driver.id] = driver.name;
+    });
+    return map;
+  }, [driversQuery.data]);
+
+  const buildRentalLabel = (rental: Rental): string => {
+    const vehicleInfo = vehiclesById[rental.vehicle_id];
+    const driverName = driversById[rental.driver_id];
+    const parts: string[] = [];
+    if (vehicleInfo?.plate) {
+      parts.push(vehicleInfo.plate.toUpperCase());
+    }
+    if (vehicleInfo?.label) {
+      parts.push(vehicleInfo.label);
+    }
+    if (driverName) {
+      parts.push(driverName);
+    }
+    return parts.join(' • ') || rental.id;
+  };
+
   const { register, handleSubmit, reset } = useForm<RentalForm>({
-    defaultValues: {
-      start_date: new Date().toISOString().slice(0, 10),
-      billing_day: 'Mon',
-    },
+    defaultValues: buildDefaultValues(),
   });
+
+  const handleResetForm = () => {
+    reset(buildDefaultValues());
+    setEditingId(null);
+  };
 
   const createRental = useMutation({
     mutationFn: (payload: Partial<Rental>) => RentalsApi.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rentals'] });
-      reset({
-        start_date: new Date().toISOString().slice(0, 10),
-        billing_day: 'Mon',
-      });
+      handleResetForm();
       setSelectedRentalId(null);
       setSelectedRentalLabel('');
       setDocumentsOpen(false);
+    },
+  });
+
+  const updateRental = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Partial<Rental> }) => RentalsApi.update(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rentals'] });
+      handleResetForm();
     },
   });
 
@@ -66,15 +128,40 @@ const Rentals: React.FC = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rentals'] }),
   });
 
-  const onSubmit = (data: RentalForm) => {
-    createRental.mutate({
-      ...data,
-      weekly_rate: data.weekly_rate.toString(),
-      deposit: data.deposit.toString(),
+  const handleEdit = (rental: Rental) => {
+    setEditingId(rental.id);
+    reset({
+      vehicle_id: rental.vehicle_id,
+      driver_id: rental.driver_id,
+      start_date: rental.start_date,
+      weekly_rate: Number(rental.weekly_rate ?? 0),
+      deposit: Number(rental.deposit ?? 0),
+      billing_day: rental.billing_day,
+      notes: rental.notes ?? '',
     });
   };
 
+  const onSubmit = (data: RentalForm) => {
+    const payload: Partial<Rental> = {
+      vehicle_id: data.vehicle_id,
+      driver_id: data.driver_id,
+      start_date: data.start_date,
+      weekly_rate: data.weekly_rate.toString(),
+      deposit: data.deposit.toString(),
+      billing_day: data.billing_day,
+      notes: data.notes,
+    };
+
+    if (editingId) {
+      updateRental.mutate({ id: editingId, payload });
+    } else {
+      createRental.mutate(payload);
+    }
+  };
+
   const isLoadingCatalogs = vehiclesQuery.isLoading || driversQuery.isLoading;
+  const isSaving = createRental.isPending || updateRental.isPending;
+  const isEditing = Boolean(editingId);
 
   return (
     <div className="space-y-6">
@@ -84,7 +171,7 @@ const Rentals: React.FC = () => {
       </header>
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-slate-700">Novo contrato</h2>
+        <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar contrato' : 'Novo contrato'}</h2>
         {isLoadingCatalogs ? (
           <Loading label="Carregando catálogos..." />
         ) : (
@@ -95,7 +182,7 @@ const Rentals: React.FC = () => {
                 <option value="">Selecione...</option>
                 {vehiclesQuery.data?.items.map((vehicle) => (
                   <option key={vehicle.id} value={vehicle.id}>
-                    {vehicle.id} - {vehicle.model}
+                    {vehicle.plate} — {vehicle.make} {vehicle.model}
                   </option>
                 ))}
               </select>
@@ -117,11 +204,11 @@ const Rentals: React.FC = () => {
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Semanal (R$)</label>
-              <input type="number" step="0.01" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('weekly_rate', { valueAsNumber: true, required: true })} />
+              <input type="number" step="0.01" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('weekly_rate', { valueAsNumber: true, required: true, min: 0 })} />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Depósito (R$)</label>
-              <input type="number" step="0.01" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('deposit', { valueAsNumber: true, required: true })} />
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Caução (R$)</label>
+              <input type="number" step="0.01" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('deposit', { valueAsNumber: true, required: true, min: 0 })} />
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Dia cobrança</label>
@@ -137,14 +224,23 @@ const Rentals: React.FC = () => {
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Observações</label>
               <textarea className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('notes')} />
             </div>
-            <div className="md:col-span-3">
+            <div className="md:col-span-3 flex flex-wrap items-center gap-3 text-sm">
               <button
                 type="submit"
-                disabled={createRental.isPending}
-                className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-70"
+                disabled={isSaving}
+                className="rounded-md bg-primary px-4 py-2 text-white hover:bg-primary/90 disabled:opacity-70"
               >
-                {createRental.isPending ? 'Salvando...' : 'Criar contrato'}
+                {isSaving ? 'Salvando...' : isEditing ? 'Atualizar contrato' : 'Criar contrato'}
               </button>
+              {isEditing ? (
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="rounded-md border border-slate-300 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancelar edição
+                </button>
+              ) : null}
             </div>
           </form>
         )}
@@ -155,7 +251,7 @@ const Rentals: React.FC = () => {
         entityId={selectedRentalId}
         isOpen={documentsOpen}
         onClose={() => setDocumentsOpen(false)}
-        title={selectedRentalId ? `Documentos do contrato ${selectedRentalLabel}` : 'Documentos do contrato'}
+        title={selectedRentalId ? `Documentos do contrato ${selectedRentalLabel || selectedRentalId}` : 'Documentos do contrato'}
         emptyMessage="Selecione um contrato para anexar documentos."
       />
 
@@ -170,16 +266,27 @@ const Rentals: React.FC = () => {
             data={rentalsQuery.data?.items ?? []}
             columns={[
               { header: 'ID', key: 'id' },
-              { header: 'Veículo', key: 'vehicle_id' },
-              { header: 'Motorista', key: 'driver_id' },
               {
-
+                header: 'Veículo',
+                key: 'vehicle_id',
+                render: (item) => {
+                  const vehicleInfo = vehiclesById[item.vehicle_id];
+                  if (!vehicleInfo) {
+                    return item.vehicle_id;
+                  }
+                  const plate = vehicleInfo.plate ? vehicleInfo.plate.toUpperCase() : null;
+                  return plate ? `${plate} — ${vehicleInfo.label}` : vehicleInfo.label;
+                },
+              },
+              {
+                header: 'Motorista',
+                key: 'driver_id',
+                render: (item) => driversById[item.driver_id] ?? item.driver_id,
+              },
+              {
                 header: 'Status',
-
                 key: 'status',
-
                 render: (item) => rentalStatusLabel(item.status),
-
               },
               {
                 header: 'Semanal',
@@ -190,12 +297,19 @@ const Rentals: React.FC = () => {
                 header: 'Ações',
                 key: 'actions',
                 render: (item) => (
-                  <div className="flex gap-2 text-xs">
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <button
+                      className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"
+                      onClick={() => handleEdit(item)}
+                    >
+                      Editar
+                    </button>
                     <button
                       className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"
                       onClick={() => {
+                        const detailLabel = buildRentalLabel(item);
                         setSelectedRentalId(item.id);
-                        setSelectedRentalLabel(`${item.id} - ${item.vehicle_id}`);
+                        setSelectedRentalLabel(detailLabel);
                         setDocumentsOpen(true);
                       }}
                     >
@@ -215,7 +329,10 @@ const Rentals: React.FC = () => {
                     <button
                       className="rounded-md border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50"
                       onClick={() => {
-                        if (confirm(`Excluir contrato ${item.id}?`)) {
+                        if (confirm('Excluir contrato?')) {
+                          if (editingId === item.id) {
+                            handleResetForm();
+                          }
                           deleteRental.mutate(item.id);
                           if (selectedRentalId === item.id) {
                             setSelectedRentalId(null);

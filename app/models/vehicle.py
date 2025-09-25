@@ -70,7 +70,9 @@ class Vehicle(TimestampMixin, Base):
 
     @property
     def total_expenses(self) -> Decimal:
-        expenses = getattr(self, "expenses", []) or []
+        expenses = self.__dict__.get("expenses")
+        if not expenses:
+            return Decimal("0")
         total = sum((expense.amount or Decimal("0")) for expense in expenses)
         return quantize_decimal(total) or Decimal("0")
 

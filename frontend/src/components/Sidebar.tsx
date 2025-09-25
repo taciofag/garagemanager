@@ -1,4 +1,4 @@
-﻿import { NavLink } from 'react-router-dom';
+﻿import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const navItems = [
@@ -19,10 +19,13 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside className="hidden w-60 flex-col border-r border-slate-200 bg-white lg:flex">
-      <div className="flex h-16 items-center gap-2 border-b border-slate-100 px-6">
-        <img src="/garage.svg" alt="Garage" className="h-8 w-8" />
-        <div className="text-lg font-semibold text-slate-800">Garage Manager</div>
-      </div>
+      <Link
+        to="/"
+        className="flex h-16 items-center gap-2 border-b border-slate-100 px-6 transition hover:bg-slate-50"
+      >
+        <img src="/garage.svg" alt="Garage Manager" className="h-8 w-8" />
+        <span className="text-lg font-semibold text-slate-800">Garage Manager</span>
+      </Link>
       <nav className="flex-1 overflow-y-auto px-3 py-6">
         <ul className="space-y-1">
           {navItems.map((item) => (

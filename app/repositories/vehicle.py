@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import selectinload
 
+from ..models.rental import Rental
 from ..models.vehicle import Vehicle, VehicleStatus
 from ..schemas.common import PaginationParams, PaginatedResult
 from ..schemas.vehicle import VehicleSell
@@ -60,6 +61,21 @@ class VehicleRepository(BaseRepository[Vehicle]):
         stmt = (
             select(Vehicle)
             .options(selectinload(Vehicle.expenses))
+            .where(Vehicle.id == vehicle_id)
+        )
+        result = await self.session.execute(stmt)
+        vehicle = result.scalar_one_or_none()
+        if vehicle:
+            vehicle.sync_status()
+        return vehicle
+
+    async def get_with_financials(self, vehicle_id: str) -> Optional[Vehicle]:
+        stmt = (
+            select(Vehicle)
+            .options(
+                selectinload(Vehicle.expenses),
+                selectinload(Vehicle.rentals).selectinload(Rental.payments),
+            )
             .where(Vehicle.id == vehicle_id)
         )
         result = await self.session.execute(stmt)

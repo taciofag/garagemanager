@@ -18,6 +18,8 @@ class CashTxnBase(DecimalModel):
     method: Optional[str] = Field(default=None, max_length=50)
     related_vehicle_id: Optional[str] = Field(default=None, max_length=12)
     related_rental_id: Optional[str] = Field(default=None, max_length=12)
+    related_expense_id: Optional[str] = Field(default=None, max_length=12)
+    related_capital_id: Optional[str] = Field(default=None, max_length=12)
     notes: Optional[str] = Field(default=None, max_length=255)
 
 
@@ -33,6 +35,8 @@ class CashTxnUpdate(DecimalModel):
     method: Optional[str] = Field(default=None, max_length=50)
     related_vehicle_id: Optional[str] = Field(default=None, max_length=12)
     related_rental_id: Optional[str] = Field(default=None, max_length=12)
+    related_expense_id: Optional[str] = Field(default=None, max_length=12)
+    related_capital_id: Optional[str] = Field(default=None, max_length=12)
     notes: Optional[str] = Field(default=None, max_length=255)
 
 

@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Date, Enum as SQLEnum, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, Date, Enum as SQLEnum, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -34,13 +34,23 @@ class CashTxn(TimestampMixin, Base):
     related_rental_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("rentals.id", ondelete="SET NULL"), nullable=True
     )
+    related_expense_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("expenses.id", ondelete="SET NULL"), nullable=True
+    )
+    related_capital_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("capital_entries.id", ondelete="SET NULL"), nullable=True
+    )
     notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     related_vehicle = relationship("Vehicle")
     related_rental = relationship("Rental")
+    related_expense = relationship("Expense")
+    related_capital = relationship("CapitalEntry")
 
     __table_args__ = (
         CheckConstraint("amount >= 0", name="ck_cash_amount_positive"),
+        UniqueConstraint("related_expense_id", name="uq_cash_expense_link"),
+        UniqueConstraint("related_capital_id", name="uq_cash_capital_link"),
     )
 
 

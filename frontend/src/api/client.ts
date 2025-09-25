@@ -1,4 +1,4 @@
-ï»¿import axios from 'axios';
+import axios from 'axios';
 
 const base = import.meta.env.VITE_API_BASE_URL ?? '/api';
 const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base;
@@ -9,14 +9,23 @@ export const api = axios.create({
   baseURL: normalizedBase,
 });
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export const setUnauthorizedHandler = (handler: (() => void) | null) => {
+  unauthorizedHandler = handler;
+};
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
       const { data, status } = error.response;
+      if (status === 401 && unauthorizedHandler) {
+        unauthorizedHandler();
+      }
       console.error('API error', { status, data });
 
-      let message: string = 'Erro inesperado na API.';
+      let message: string = status === 401 ? 'Sessão expirada. Faça login novamente.' : 'Erro inesperado na API.';
       const detail = data?.detail;
 
       if (Array.isArray(detail)) {
@@ -25,7 +34,7 @@ api.interceptors.response.use(
           .join(' | ');
       } else if (typeof detail === 'string') {
         message = detail;
-      } else if (typeof detail === 'object' && detail !== null) {
+      } else if (typeof detail === 'object' && detail !== null && status !== 401) {
         message = detail.message ?? JSON.stringify(detail);
       }
 

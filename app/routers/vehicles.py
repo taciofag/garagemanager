@@ -2,6 +2,7 @@
 
 from typing import Optional
 
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,9 @@ from ..dependencies import get_pagination_params
 from ..models.vehicle import VehicleStatus
 from ..repositories.vehicle import VehicleRepository
 from ..schemas.common import PaginatedResult, PaginationParams
-from ..schemas.vehicle import VehicleCreate, VehicleRead, VehicleSell, VehicleUpdate
+from ..schemas.expense import ExpenseRead
+from ..schemas.rent_payment import RentPaymentRead
+from ..schemas.vehicle import VehicleCreate, VehicleFinancialSummary, VehicleRead, VehicleRentalSummary, VehicleSell, VehicleUpdate
 from ..services.security import get_current_active_user, get_current_admin
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
@@ -87,6 +90,78 @@ async def get_vehicle(
         raise HTTPException(status_code=404, detail="Vehicle not found")
     await session.commit()
     return serialize_vehicle(vehicle)
+
+@router.get("/{vehicle_id}/financial", response_model=VehicleFinancialSummary)
+async def get_vehicle_financial(
+    vehicle_id: str,
+    session: AsyncSession = Depends(get_db),
+    _: None = Depends(get_current_active_user),
+) -> VehicleFinancialSummary:
+    repo = VehicleRepository(session)
+    vehicle = await repo.get_with_financials(vehicle_id)
+    if not vehicle:
+        await session.rollback()
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    expenses = sorted(vehicle.expenses, key=lambda exp: exp.date)
+    expenses_read = [
+        ExpenseRead.model_validate(expense) for expense in expenses
+    ]
+    total_expenses = sum((expense.amount or Decimal('0')) for expense in expenses)
+
+    rentals = sorted(vehicle.rentals, key=lambda rental: rental.start_date)
+    rental_summaries = []
+    total_rent_paid = Decimal('0')
+    total_rent_due = Decimal('0')
+    total_late_fee = Decimal('0')
+
+    for rental in rentals:
+        payments = sorted(rental.payments, key=lambda payment: payment.period_start)
+        payment_reads = [RentPaymentRead.model_validate(payment) for payment in payments]
+        rental_due = sum((payment.due_amount or Decimal('0')) for payment in payments)
+        rental_paid = sum((payment.paid_amount or Decimal('0')) for payment in payments)
+        rental_late = sum((payment.late_fee or Decimal('0')) for payment in payments)
+        total_rent_paid += rental_paid
+        total_rent_due += rental_due
+        total_late_fee += rental_late
+        rental_summaries.append({
+            "id": rental.id,
+            "driver_id": rental.driver_id,
+            "start_date": rental.start_date,
+            "end_date": rental.end_date,
+            "status": rental.status,
+            "payments": payment_reads,
+            "total_due": rental_due,
+            "total_paid": rental_paid,
+            "total_late_fee": rental_late,
+        })
+
+    acquisition_price = vehicle.acquisition_price or Decimal('0')
+    total_cost = acquisition_price + total_expenses
+    sale_net = vehicle.sale_net or Decimal('0')
+    sale_price = vehicle.sale_price or None
+    sale_fees = vehicle.sale_fees or None
+    total_income = total_rent_paid + total_late_fee + sale_net
+    profit = total_income - total_cost
+
+    summary = VehicleFinancialSummary(
+        vehicle=VehicleRead.model_validate(vehicle),
+        acquisition_price=acquisition_price,
+        total_expenses=total_expenses,
+        expenses=expenses_read,
+        rentals=[VehicleRentalSummary(**r) for r in rental_summaries],
+        total_rent_paid=total_rent_paid,
+        total_rent_due=total_rent_due,
+        total_late_fee=total_late_fee,
+        sale_price=sale_price,
+        sale_fees=sale_fees,
+        sale_net=vehicle.sale_net,
+        total_cost=total_cost,
+        total_income=total_income,
+        profit=profit,
+    )
+    await session.commit()
+    return summary
 
 
 @router.patch("/{vehicle_id}", response_model=VehicleRead)
