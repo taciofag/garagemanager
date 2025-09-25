@@ -1,5 +1,5 @@
-﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { CashApi, RentalsApi, VehiclesApi } from '../api/resources';
@@ -36,6 +36,26 @@ const Cash: React.FC = () => {
   const vehiclesQuery = useQuery({ queryKey: ['vehicles', 'cash'], queryFn: () => VehiclesApi.list({ page_size: 100 }) });
   const rentalsQuery = useQuery({ queryKey: ['rentals', 'cash'], queryFn: () => RentalsApi.list({ page_size: 100 }) });
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const vehiclesById = useMemo(() => {
+    const dictionary: Record<string, { plate?: string; make?: string; model?: string }> = {};
+    vehiclesQuery.data?.items.forEach((vehicle) => {
+      dictionary[vehicle.id] = { plate: vehicle.plate, make: vehicle.make, model: vehicle.model };
+    });
+    return dictionary;
+  }, [vehiclesQuery.data]);
+
+  const rentalOptions = useMemo(() => {
+    return (
+      rentalsQuery.data?.items.map((rental) => {
+        const vehicle = vehiclesById[rental.vehicle_id];
+        const plate = vehicle?.plate ? vehicle.plate.toUpperCase() : null;
+        const description = [vehicle?.make, vehicle?.model].filter(Boolean).join(' ');
+        const label = [plate, description || rental.vehicle_id].filter(Boolean).join(' — ');
+        return { id: rental.id, label: label || rental.id };
+      }) ?? []
+    );
+  }, [rentalsQuery.data, vehiclesById]);
 
   const { register, handleSubmit, reset } = useForm<CashForm>({ defaultValues: buildDefaultValues() });
 
@@ -131,7 +151,7 @@ const Cash: React.FC = () => {
             <input type="number" step="0.01" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('amount', { valueAsNumber: true, required: true, min: 0 })} />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Forma pagamento</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Forma de pagamento</label>
             <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('method')} />
           </div>
           <div>
@@ -140,7 +160,7 @@ const Cash: React.FC = () => {
               <option value="">-</option>
               {vehiclesQuery.data?.items.map((vehicle) => (
                 <option key={vehicle.id} value={vehicle.id}>
-                  {vehicle.plate} — {vehicle.make} {vehicle.model}
+                  {vehicle.plate?.toUpperCase()} — {[vehicle.make, vehicle.model].filter(Boolean).join(' ')}
                 </option>
               ))}
             </select>
@@ -149,9 +169,9 @@ const Cash: React.FC = () => {
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Aluguel (opcional)</label>
             <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('related_rental_id')}>
               <option value="">-</option>
-              {rentalsQuery.data?.items.map((rental) => (
-                <option key={rental.id} value={rental.id}>
-                  {rental.id} — {rental.vehicle_id}
+              {rentalOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
                 </option>
               ))}
             </select>

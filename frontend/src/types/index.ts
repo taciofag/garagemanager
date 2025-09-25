@@ -144,6 +144,29 @@ export interface CashTxn {
   notes?: string;
 }
 
+export interface SummaryVehicleStatus {
+  status: Vehicle['status'];
+  count: number;
+}
+
+export interface SummaryRentSeriesPoint {
+  label: string;
+  due: string;
+  collected: string;
+}
+
+export interface SummaryValuePoint {
+  label: string;
+  value: string;
+}
+
+export interface SummaryPartnerBalance {
+  partner: string;
+  contribution_total: string;
+  withdrawal_total: string;
+  balance: string;
+}
+
 export interface SummaryMetrics {
   total_vehicles_stock: number;
   vehicles_rented: number;
@@ -152,6 +175,14 @@ export interface SummaryMetrics {
   capital_out_total: string;
   rent_collected_ytd: string;
   profit_realized_sales_ytd: string;
+  outstanding_rent_total: string;
+  open_rent_payments: number;
+  cash_balance: string;
+  vehicle_status_breakdown: SummaryVehicleStatus[];
+  rent_collection_last_6_months: SummaryRentSeriesPoint[];
+  expenses_last_6_months: SummaryValuePoint[];
+  expenses_by_category_ytd: SummaryValuePoint[];
+  capital_balance_by_partner: SummaryPartnerBalance[];
 }
 
 export interface DocumentItem {

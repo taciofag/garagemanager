@@ -77,3 +77,10 @@ async def test_summary_endpoint(client, admin_user):
     data = response.json()
     assert "total_vehicles_stock" in data
     assert "rent_collected_ytd" in data
+    assert "cash_balance" in data
+    assert "outstanding_rent_total" in data
+    assert "vehicle_status_breakdown" in data
+    assert isinstance(data['vehicle_status_breakdown'], list)
+    assert "rent_collection_last_6_months" in data
+    assert len(data['rent_collection_last_6_months']) <= 6
+    assert "capital_balance_by_partner" in data
