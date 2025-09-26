@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Annotated
 
 from pydantic import BaseModel, Field
 
@@ -17,7 +17,7 @@ class RentPaymentBase(DecimalModel):
     weeks: int = 1
     due_amount: Decimal
     paid_amount: Decimal = Decimal("0")
-    payment_date: Optional[date] = None
+    payment_date: Annotated[Optional[date], Field(default=None)]
     late_fee: Decimal = Decimal("0")
     method: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, max_length=255)
@@ -28,13 +28,13 @@ class RentPaymentCreate(RentPaymentBase):
 
 
 class RentPaymentUpdate(DecimalModel):
-    period_start: Optional[date] = None
-    period_end: Optional[date] = None
+    period_start: Annotated[Optional[date], Field(default=None)]
+    period_end: Annotated[Optional[date], Field(default=None)]
     weekly_rate: Optional[Decimal] = None
     weeks: Optional[int] = None
     due_amount: Optional[Decimal] = None
     paid_amount: Optional[Decimal] = None
-    payment_date: Optional[date] = None
+    payment_date: Annotated[Optional[date], Field(default=None)]
     late_fee: Optional[Decimal] = None
     method: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, max_length=255)

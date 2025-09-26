@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 from datetime import date, timedelta
@@ -15,6 +15,7 @@ from .models.rental import BillingDay, RentalStatus
 from .models.vehicle import Vehicle, VehicleStatus
 from .models.vendor import VendorType
 from .repositories.capital import CapitalRepository
+from .repositories.partner import PartnerRepository
 from .repositories.cash import CashRepository
 from .repositories.driver import DriverRepository
 from .repositories.expense import ExpenseRepository
@@ -37,13 +38,14 @@ async def seed() -> None:
         expense_repo = ExpenseRepository(session)
         rental_repo = RentalRepository(session)
         payment_repo = RentPaymentRepository(session)
+        partner_repo = PartnerRepository(session)
         capital_repo = CapitalRepository(session)
         cash_repo = CashRepository(session)
 
         driver1 = await driver_repo.create_driver(
             {
                 "id": "DRV-0001",
-                "name": "Jo�o Silva",
+                "name": "João Silva",
                 "cpf": "123.456.789-00",
                 "phone": "+55 11 99999-1111",
                 "start_date": date.today() - timedelta(days=90),
@@ -76,6 +78,13 @@ async def seed() -> None:
             {"id": "VND-0002", "name": "Oficina Turbo", "type": VendorType.MECHANIC}
         )
 
+        partner1 = await partner_repo.create_partner(
+            {"id": "PRT-0001", "name": "Sócio A"}
+        )
+        partner2 = await partner_repo.create_partner(
+            {"id": "PRT-0002", "name": "Sócio B"}
+        )
+
         vehicle1 = await vehicle_repo.create_vehicle(
             {
                 "id": "CAR-0001",
@@ -91,7 +100,7 @@ async def seed() -> None:
                 "acquisition_price": Decimal("45000"),
                 "current_driver_id": driver1.id,
                 "odometer_in": 32000,
-                "notes": "Ve�culo em �timo estado",
+                "notes": "Veículo em ótimo estado",
             }
         )
         vehicle2 = await vehicle_repo.create_vehicle(
@@ -144,7 +153,7 @@ async def seed() -> None:
                 "description": "Troca de pneus",
                 "invoice_no": "NF123",
                 "amount": Decimal("1500"),
-                "paid_with": "Cart�o",
+                "paid_with": "Cartão",
             }
         )
         await expense_repo.create_expense(
@@ -154,7 +163,7 @@ async def seed() -> None:
                 "date": date.today() - timedelta(days=30),
                 "vendor_id": vendor2.id,
                 "category": ExpenseCategory.REPAIR,
-                "description": "Revis�o",
+                "description": "Revisão",
                 "invoice_no": "NF124",
                 "amount": Decimal("800"),
                 "paid_with": "Dinheiro",
@@ -170,7 +179,7 @@ async def seed() -> None:
                 "description": "Troca de pastilhas",
                 "invoice_no": "NF125",
                 "amount": Decimal("600"),
-                "paid_with": "Cart�o",
+                "paid_with": "Cartão",
             }
         )
 
@@ -217,7 +226,7 @@ async def seed() -> None:
         await capital_repo.create_capital(
             {
                 "id": "CAP-0001",
-                "partner": "S�cio A",
+                "partner": "Sócio A",
                 "date": date.today() - timedelta(days=100),
                 "type": CapitalType.CONTRIBUTION,
                 "amount": Decimal("50000"),
@@ -226,7 +235,7 @@ async def seed() -> None:
         await capital_repo.create_capital(
             {
                 "id": "CAP-0002",
-                "partner": "S�cio A",
+                "partner": "Sócio A",
                 "date": date.today() - timedelta(days=10),
                 "type": CapitalType.WITHDRAWAL,
                 "amount": Decimal("5000"),
@@ -250,9 +259,9 @@ async def seed() -> None:
                 "id": "CSH-0002",
                 "date": date.today() - timedelta(days=3),
                 "type": CashTxnType.OUTFLOW,
-                "category": "Manuten��o",
+                "category": "Manutenção",
                 "amount": Decimal("300"),
-                "method": "Cart�o",
+                "method": "Cartão",
                 "related_vehicle_id": vehicle2.id,
             }
         )
@@ -263,4 +272,5 @@ async def seed() -> None:
 
 if __name__ == "__main__":
     asyncio.run(seed())
+
 

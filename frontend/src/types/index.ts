@@ -67,6 +67,13 @@ export interface Vendor {
   phone?: string;
   notes?: string;
 }
+export interface Partner {
+  id: string;
+  name: string;
+  phone?: string;
+  notes?: string;
+}
+
 
 export interface Driver {
   id: string;

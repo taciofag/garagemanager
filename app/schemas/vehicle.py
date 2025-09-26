@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Annotated
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +24,7 @@ class VehicleBase(DecimalModel):
     color: Optional[str] = Field(default=None, max_length=30)
     acquisition_date: date
     acquisition_price: Decimal
-    sale_date: Optional[date] = None
+    sale_date: Annotated[Optional[date], Field(default=None)]
     sale_price: Optional[Decimal] = None
     sale_fees: Optional[Decimal] = None
     current_driver_id: Optional[str] = None
@@ -45,9 +45,9 @@ class VehicleUpdate(DecimalModel):
     make: Optional[str] = Field(default=None, max_length=50)
     model: Optional[str] = Field(default=None, max_length=50)
     color: Optional[str] = Field(default=None, max_length=30)
-    acquisition_date: Optional[date] = None
+    acquisition_date: Annotated[Optional[date], Field(default=None)]
     acquisition_price: Optional[Decimal] = None
-    sale_date: Optional[date] = None
+    sale_date: Annotated[Optional[date], Field(default=None)]
     sale_price: Optional[Decimal] = None
     sale_fees: Optional[Decimal] = None
     current_driver_id: Optional[str] = None

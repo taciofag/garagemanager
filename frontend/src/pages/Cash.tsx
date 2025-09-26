@@ -112,6 +112,7 @@ const Cash: React.FC = () => {
     };
 
     if (editingId) {
+      console.log('payload cash update', payload);
       updateTxn.mutate({ id: editingId, payload });
     } else {
       createTxn.mutate(payload);

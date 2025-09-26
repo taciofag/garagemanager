@@ -14,6 +14,7 @@ from .routers import (
     documents,
     drivers,
     expenses,
+    partners,
     rent_payments,
     rentals,
     summary,
@@ -34,6 +35,7 @@ app.include_router(auth.router)
 app.include_router(vehicles.router)
 app.include_router(drivers.router)
 app.include_router(vendors.router)
+app.include_router(partners.router)
 app.include_router(expenses.router)
 app.include_router(rentals.router)
 app.include_router(rent_payments.router)
@@ -75,3 +77,4 @@ async def root() -> RedirectResponse:
 @app.get("/health", tags=["misc"])
 async def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+

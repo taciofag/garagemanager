@@ -45,6 +45,15 @@ export const VendorsApi = {
   remove: async (id: string) => api.delete(`/vendors/${id}`),
 };
 
+export const PartnersApi = {
+  list: async (params: Record<string, unknown> = {}) =>
+    (await api.get<PaginatedResponse<Partner>>('/partners', { params })).data,
+  create: async (payload: Partial<Partner>) => (await api.post<Partner>('/partners', payload)).data,
+  update: async (id: string, payload: Partial<Partner>) =>
+    (await api.patch<Partner>(`/partners/${id}`, payload)).data,
+  remove: async (id: string) => api.delete(`/partners/${id}`),
+};
+
 export const RentalsApi = {
   list: async (params: Record<string, unknown> = {}) =>
     (await api.get<PaginatedResponse<Rental>>('/rentals', { params })).data,
@@ -117,3 +126,4 @@ export const DocumentsApi = {
   remove: async (id: string) => api.delete(`/documents/${id}`),
   downloadUrl: (id: string) => `${apiBaseURL}/documents/${id}/download`,
 };
+

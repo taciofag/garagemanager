@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Annotated
 
 from pydantic import BaseModel, Field
 
@@ -14,7 +14,7 @@ class RentalBase(DecimalModel):
     vehicle_id: str = Field(max_length=12)
     driver_id: str = Field(max_length=12)
     start_date: date
-    end_date: Optional[date] = None
+    end_date: Annotated[Optional[date], Field(default=None)]
     weekly_rate: Decimal
     deposit: Decimal = Decimal("0")
     billing_day: BillingDay
@@ -29,8 +29,8 @@ class RentalCreate(RentalBase):
 class RentalUpdate(DecimalModel):
     vehicle_id: Optional[str] = Field(default=None, max_length=12)
     driver_id: Optional[str] = Field(default=None, max_length=12)
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: Annotated[Optional[date], Field(default=None)]
+    end_date: Annotated[Optional[date], Field(default=None)]
     weekly_rate: Optional[Decimal] = None
     deposit: Optional[Decimal] = None
     billing_day: Optional[BillingDay] = None

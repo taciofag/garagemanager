@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Annotated
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ class ExpenseCreate(ExpenseBase):
 
 class ExpenseUpdate(DecimalModel):
     vehicle_id: Optional[str] = Field(default=None, max_length=12)
-    date: Optional[date] = None
+    date: Annotated[Optional[date], Field(default=None)]
     vendor_id: Optional[str] = Field(default=None, max_length=12)
     category: Optional[ExpenseCategory] = None
     description: Optional[str] = Field(default=None, max_length=255)

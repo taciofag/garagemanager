@@ -1,6 +1,7 @@
 ﻿from .vehicle import VehicleCreate, VehicleRead, VehicleUpdate, VehicleSell
 from .driver import DriverCreate, DriverRead, DriverUpdate
 from .vendor import VendorCreate, VendorRead, VendorUpdate
+from .partner import PartnerCreate, PartnerRead, PartnerUpdate
 from .expense import ExpenseCreate, ExpenseRead, ExpenseUpdate
 from .rental import RentalCreate, RentalRead, RentalUpdate, RentalClose
 from .rent_payment import (
@@ -27,6 +28,9 @@ __all__ = [
     "VendorCreate",
     "VendorRead",
     "VendorUpdate",
+    "PartnerCreate",
+    "PartnerRead",
+    "PartnerUpdate",
     "ExpenseCreate",
     "ExpenseRead",
     "ExpenseUpdate",

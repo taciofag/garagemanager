@@ -1,11 +1,11 @@
-﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { CapitalApi } from '../api/resources';
+import { CapitalApi, PartnersApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
-import type { CapitalEntry } from '../types';
+import type { CapitalEntry, Partner } from '../types';
 import { capitalTypeLabel } from '../utils/labels';
 
 interface CapitalForm {
@@ -26,10 +26,37 @@ const buildDefaultValues = (): CapitalForm => ({
 
 const Capital: React.FC = () => {
   const queryClient = useQueryClient();
+  const { register, handleSubmit, reset, setValue, watch } = useForm<CapitalForm>({ defaultValues: buildDefaultValues() });
   const capitalQuery = useQuery({ queryKey: ['capital'], queryFn: () => CapitalApi.list() });
+  const partnersQuery = useQuery({ queryKey: ['partners'], queryFn: () => PartnersApi.list({ page_size: 200 }) });
+  const partnerOptions = partnersQuery.data?.items ?? [];
+  const [newPartnerName, setNewPartnerName] = useState('');
+  const createPartner = useMutation({
+    mutationFn: (payload: Partial<Partner>) => PartnersApi.create(payload),
+    onSuccess: (partner) => {
+      queryClient.invalidateQueries({ queryKey: ['partners'] });
+      setValue('partner', partner.name);
+      setNewPartnerName('');
+    },
+    onError: (error: Error) => {
+      window.alert(error.message);
+    },
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const { register, handleSubmit, reset } = useForm<CapitalForm>({ defaultValues: buildDefaultValues() });
+  const selectedPartnerName = watch('partner');
+  const partnerOptionsWithSelection =
+    selectedPartnerName && !partnerOptions.some((item) => item.name === selectedPartnerName)
+      ? [...partnerOptions, { id: selectedPartnerName, name: selectedPartnerName } as Partner]
+      : partnerOptions;
+
+  const handleCreatePartner = () => {
+    const trimmedName = newPartnerName.trim();
+    if (!trimmedName || createPartner.isPending) {
+      return;
+    }
+    createPartner.mutate({ name: trimmedName });
+  };
 
   const handleResetForm = () => {
     reset(buildDefaultValues());
@@ -99,7 +126,47 @@ const Capital: React.FC = () => {
         <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit(onSubmit)}>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Sócio</label>
-            <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('partner', { required: true })} />
+            <select
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              {...register('partner', { required: true })}
+              disabled={partnersQuery.isLoading || partnerOptionsWithSelection.length === 0}
+            >
+              <option value="">{partnersQuery.isLoading ? 'Carregando sócios...' : 'Selecione um sócio'}</option>
+              {partnerOptionsWithSelection.map((partner) => (
+                <option key={partner.id} value={partner.name}>
+                  {partner.name}
+                </option>
+              ))}
+            </select>
+            <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-center">
+              <input
+                type="text"
+                value={newPartnerName}
+                onChange={(event) => setNewPartnerName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleCreatePartner();
+                  }
+                }}
+                placeholder="Cadastrar novo sócio"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 md:w-auto"
+              />
+              <button
+                type="button"
+                onClick={handleCreatePartner}
+                disabled={createPartner.isPending || !newPartnerName.trim()}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-70"
+              >
+                {createPartner.isPending ? 'Adicionando...' : 'Adicionar sócio'}
+              </button>
+            </div>
+            {partnersQuery.isError ? (
+              <p className="mt-2 text-xs text-red-600">Erro ao carregar sócios.</p>
+            ) : null}
+            {partnerOptionsWithSelection.length === 0 && !partnersQuery.isLoading ? (
+              <p className="mt-2 text-xs text-slate-500">Cadastre um sócio acima para liberar os lançamentos.</p>
+            ) : null}
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Data</label>
@@ -126,7 +193,7 @@ const Capital: React.FC = () => {
               disabled={isSaving}
               className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-70"
             >
-              {isSaving ? 'Salvando...' : isEditing ? 'Atualizar lançamento' : 'Salvar lançamento'}
+              {isSaving ? 'Salvando...' : isEditing ? 'Atualizar lanÃ§amento' : 'Salvar lanÃ§amento'}
             </button>
             {isEditing ? (
               <button
@@ -134,7 +201,7 @@ const Capital: React.FC = () => {
                 onClick={handleResetForm}
                 className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
               >
-                Cancelar edição
+                Cancelar ediÃ§Ã£o
               </button>
             ) : null}
           </div>
@@ -142,17 +209,17 @@ const Capital: React.FC = () => {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-700">Histórico</h2>
+        <h2 className="text-lg font-semibold text-slate-700">HistÃ³rico</h2>
         {capitalQuery.isLoading ? (
           <Loading label="Carregando capital..." />
         ) : capitalQuery.isError ? (
-          <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">Erro ao carregar histórico.</div>
+          <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">Erro ao carregar histÃ³rico.</div>
         ) : (
           <DataTable<CapitalEntry>
             data={capitalQuery.data?.items ?? []}
             columns={[
               { header: 'ID', key: 'id' },
-              { header: 'Sócio', key: 'partner' },
+              { header: 'SÃ³cio', key: 'partner' },
               {
                 header: 'Tipo',
                 key: 'type',
@@ -164,7 +231,7 @@ const Capital: React.FC = () => {
                 render: (item) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.amount)),
               },
               {
-                header: 'Ações',
+                header: 'AÃ§Ãµes',
                 key: 'actions',
                 render: (item) => (
                   <div className="flex flex-wrap gap-2 text-xs">
@@ -177,7 +244,7 @@ const Capital: React.FC = () => {
                     <button
                       className="rounded-md border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50"
                       onClick={() => {
-                        if (confirm('Excluir lançamento?')) {
+                        if (confirm('Excluir lanÃ§amento?')) {
                           if (editingId === item.id) {
                             handleResetForm();
                           }

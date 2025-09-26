@@ -8,10 +8,12 @@ from app.repositories.vehicle import VehicleRepository
 from app.repositories.expense import ExpenseRepository
 from app.repositories.cash import CashRepository
 from app.repositories.capital import CapitalRepository
+from app.repositories.partner import PartnerRepository
 from app.models.driver import DriverStatus
 from app.models.cash import CashTxnType
 from app.models.expense import ExpenseCategory
 from app.models.capital import CapitalType
+from app.schemas.common import PaginationParams
 
 
 @pytest.mark.anyio
@@ -116,3 +118,15 @@ async def test_capital_auto_creates_cash(session):
     await capital_repo.delete_capital_entry(entry)
     removed_txn = await cash_repo.get_by_related_capital(entry.id)
     assert removed_txn is None
+
+@pytest.mark.anyio
+async def test_partner_repository_crud(session):
+    repo = PartnerRepository(session)
+    partner = await repo.create_partner({"name": "Repo Partner"})
+    assert partner.id.startswith("PRT-")
+
+    await repo.update_partner(partner, {"phone": "+551199999999"})
+    assert partner.phone == "+551199999999"
+
+    result = await repo.list_partners(PaginationParams(page=1, page_size=10))
+    assert any(item.name == "Repo Partner" for item in result.items)

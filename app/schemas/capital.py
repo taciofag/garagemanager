@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Annotated
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +24,7 @@ class CapitalCreate(CapitalBase):
 
 class CapitalUpdate(DecimalModel):
     partner: Optional[str] = Field(default=None, max_length=100)
-    date: Optional[date] = None
+    date: Annotated[Optional[date], Field(default=None)]
     type: Optional[CapitalType] = None
     amount: Optional[Decimal] = None
     notes: Optional[str] = Field(default=None, max_length=255)

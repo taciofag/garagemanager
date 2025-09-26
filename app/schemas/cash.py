@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ class CashTxnCreate(CashTxnBase):
 
 
 class CashTxnUpdate(DecimalModel):
-    date: Optional[date] = None
+    date: Annotated[Optional[date], Field(default=None)]
     type: Optional[CashTxnType] = None
     category: Optional[str] = Field(default=None, max_length=50)
     amount: Optional[Decimal] = None
