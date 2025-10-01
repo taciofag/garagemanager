@@ -18,7 +18,19 @@ from app.db import Base
 from app import models  # noqa: F401  # ensure models imported
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url.replace("+aiosqlite", ""))
+
+def _sync_database_url(async_url: str) -> str:
+    replacements = {
+        "+aiosqlite": "",
+        "+aiomysql": "+pymysql",
+    }
+    sync_url = async_url
+    for needle, swap in replacements.items():
+        if needle in sync_url:
+            sync_url = sync_url.replace(needle, swap)
+    return sync_url
+
+config.set_main_option("sqlalchemy.url", _sync_database_url(settings.database_url))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

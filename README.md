@@ -4,7 +4,7 @@ Sistema completo para controle de compra e venda de carros de leilao, gestao de 
 
 ## Stack
 - Backend: Python 3.11, FastAPI, SQLAlchemy 2.x, Pydantic v2, Alembic, Uvicorn
-- Banco: SQLite (dev) com suporte a Postgres
+- Banco: SQLite (dev), MySQL (produção) e suporte a Postgres
 - Auth: JWT com escopos admin/user
 - Testes: pytest + httpx
 - Frontend: React 18 + Vite + TypeScript + React Query + TailwindCSS
@@ -35,12 +35,20 @@ pytest --asyncio-mode=auto
 SQLite em memoria. Cobertura de modelos, repositorios e rotas principais.
 
 ### Docker
-```bash
-docker-compose up --build
-```
-- `api` em http://localhost:8000
-- `scheduler` chama `/billing/run` diariamente as 08:00 UTC
-- `db` (Postgres) opcional. Para usar, defina `DATABASE_URL=postgresql+asyncpg://garage:garage@db:5432/garage`
+1. Atualize o arquivo `.env` com as credenciais do MySQL hospedado (exemplo):
+   ```env
+   DATABASE_URL=mysql+aiomysql://usuario:senha@host:3306/nome_do_banco
+   FRONTEND_API_BASE_URL=http://api:8000
+   ```
+2. Construa e suba todos os serviços (API, scheduler e frontend estático):
+   ```bash
+   docker-compose up --build -d
+   ```
+3. Endpoints expostos:
+   - API FastAPI: http://localhost:${API_PORT:-8000}
+   - Frontend (Nginx servindo build do Vite): http://localhost:${FRONTEND_PORT:-4173}
+   - Scheduler executa `python -m app.scripts.run_billing` diariamente às 08:00 UTC
+   - Dentro da rede Docker, o frontend acessa a API pelo hostname do serviço (`http://api:8000`)
 
 ### Uploads de documentos
 - Diretorio padrao: `uploads/` (configuravel via `UPLOADS_DIR`)
