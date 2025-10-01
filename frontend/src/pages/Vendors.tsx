@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { VendorsApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
+import { PageHeader } from '../components/PageHeader';
 import type { Vendor } from '../types';
 import { vendorTypeLabel, vendorTypeOptions } from '../utils/labels';
 
@@ -77,10 +78,11 @@ const Vendors: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-800">Fornecedores e Serviços</h1>
-        <p className="text-sm text-slate-500">Mantenha o cadastro de fornecedores, oficinas e parceiros de serviços.</p>
-      </header>
+      <PageHeader
+        title="Fornecedores e Serviços"
+        description="Mantenha o cadastro de fornecedores, oficinas e parceiros de serviços."
+        variant="soft"
+      />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar fornecedor' : 'Novo fornecedor'}</h2>

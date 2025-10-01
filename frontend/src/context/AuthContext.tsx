@@ -1,4 +1,4 @@
-﻿import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 
 import { api, setUnauthorizedHandler } from '../api/client';
@@ -111,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           window.location.href = '/login';
         }
       }, INACTIVITY_TIMEOUT_MS);
-    } catch (error) {
+    } catch {
       throw new Error('Falha no login. Verifique suas credenciais.');
     }
   };
@@ -141,3 +141,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

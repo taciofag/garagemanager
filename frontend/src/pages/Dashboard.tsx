@@ -22,6 +22,7 @@ import { vehicleStatusLabel } from '../utils/labels';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
 import { StatCard } from '../components/StatCard';
+import { PageHeader } from '../components/PageHeader';
 import type { RentPayment, Vehicle } from '../types';
 
 const currency = (value: string | number) =>
@@ -173,24 +174,14 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      <header className="rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-slate-800 p-6 text-white shadow-lg">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold">Visão geral do portfólio</h1>
-            <p className="text-sm text-indigo-100">
-              Acompanhe o desempenho da frota, receitas de aluguel e saúde financeira em tempo real.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {heroHighlights.map((highlight) => (
-              <div key={highlight.label} className="rounded-lg bg-white/10 px-4 py-3 text-sm">
-                <p className="text-[11px] uppercase tracking-wide text-indigo-100">{highlight.label}</p>
-                <p className="text-lg font-semibold text-white">{highlight.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </header>
+      <PageHeader
+        title="Visão geral do portfólio"
+        description="Acompanhe o desempenho da frota, receitas de aluguel e saúde financeira em tempo real."
+        metrics={heroHighlights.map((highlight) => ({
+          label: highlight.label,
+          value: highlight.value,
+        }))}
+      />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="space-y-6">

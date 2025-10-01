@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { BillingApi, RentPaymentsApi, RentalsApi, VehiclesApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
+import { PageHeader } from '../components/PageHeader';
 import type { RentPayment } from '../types';
 
 interface RentPaymentForm {
@@ -393,12 +394,10 @@ const RentPayments: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header className="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-800 p-6 text-white shadow-lg">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Cobranças de aluguel</h1>
-            <p className="text-sm text-indigo-200">Controle as faturas semanais, registre pagamentos e acompanhe o saldo de cada contrato.</p>
-          </div>
+      <PageHeader
+        title="Cobranças de aluguel"
+        description="Controle as faturas semanais, registre pagamentos e acompanhe o saldo de cada contrato."
+        actions={(
           <div className="space-y-2 text-sm">
             <button
               onClick={() => runBilling.mutate()}
@@ -409,8 +408,8 @@ const RentPayments: React.FC = () => {
             {billingMessage ? <p className="text-xs text-indigo-100">{billingMessage}</p> : null}
             {billingError ? <p className="text-xs text-amber-200">{billingError}</p> : null}
           </div>
-        </div>
-      </header>
+        )}
+      />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-6 xl:flex-row">

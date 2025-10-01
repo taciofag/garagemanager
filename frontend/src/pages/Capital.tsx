@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { CapitalApi, PartnersApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
+import { PageHeader } from '../components/PageHeader';
 import type { CapitalEntry, Partner } from '../types';
 import { capitalTypeLabel } from '../utils/labels';
 
@@ -192,12 +193,13 @@ const Capital: React.FC = () => {
   return (
     <>
       <div className="space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold text-slate-800">Movimentações de capital</h1>
-          <p className="text-sm text-slate-500">Controle aportes e retiradas de sócios.</p>
-        </header>
+        <PageHeader
+        title="Movimentações de capital"
+        description="Controle aportes e retiradas de sócios."
+        variant="soft"
+      />
 
-        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar lançamento' : 'Novo lançamento'}</h2>
           <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit(onSubmit)}>
             <div className="md:col-span-3">

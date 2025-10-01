@@ -3,6 +3,7 @@
 import { SummaryApi } from '../api/resources';
 import { Loading } from '../components/Loading';
 import { StatCard } from '../components/StatCard';
+import { PageHeader } from '../components/PageHeader';
 
 const currency = (value: string | number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value));
@@ -21,10 +22,12 @@ const Summary: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-800">Resumo financeiro</h1>
-        <p className="text-sm text-slate-500">Indicadores calculados em tempo real com base na base de dados.</p>
-      </header>
+      <PageHeader
+        title="Resumo financeiro"
+        description="Indicadores calculados em tempo real com base na base de dados."
+        variant="soft"
+      />
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <StatCard title="Veículos em estoque" value={summary.total_vehicles_stock} />
         <StatCard title="Veículos alugados" value={summary.vehicles_rented} tone="success" />

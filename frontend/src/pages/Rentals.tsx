@@ -6,6 +6,7 @@ import { DriversApi, RentalsApi, VehiclesApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { DocumentManager } from '../components/DocumentManager';
 import { Loading } from '../components/Loading';
+import { PageHeader } from '../components/PageHeader';
 import type { Rental } from '../types';
 import { billingDayOptions, rentalStatusLabel } from '../utils/labels';
 
@@ -165,10 +166,11 @@ const Rentals: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-800">Contratos de aluguel</h1>
-        <p className="text-sm text-slate-500">Controle a alocação de veículos para motoristas e gere cobranças semanais.</p>
-      </header>
+      <PageHeader
+        title="Contratos de aluguel"
+        description="Controle a alocação de veículos para motoristas e gere cobranças semanais."
+        variant="soft"
+      />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar contrato' : 'Novo contrato'}</h2>

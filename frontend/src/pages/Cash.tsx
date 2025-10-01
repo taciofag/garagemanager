@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { CashApi, RentalsApi, VehiclesApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
+import { PageHeader } from '../components/PageHeader';
 import type { CashTxn } from '../types';
 import { cashTypeLabel } from '../utils/labels';
 
@@ -124,10 +125,11 @@ const Cash: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-800">Livro-caixa</h1>
-        <p className="text-sm text-slate-500">Registre entradas e saídas financeiras da operação.</p>
-      </header>
+      <PageHeader
+        title="Livro-caixa"
+        description="Registre entradas e saídas financeiras da operação."
+        variant="soft"
+      />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar transação' : 'Nova transação'}</h2>

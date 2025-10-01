@@ -6,6 +6,7 @@ import { DriversApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { DocumentManager } from '../components/DocumentManager';
 import { Loading } from '../components/Loading';
+import { PageHeader } from '../components/PageHeader';
 import type { Driver } from '../types';
 import { driverStatusLabel, driverStatusOptions } from '../utils/labels';
 
@@ -114,10 +115,11 @@ const Drivers: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-800">Motoristas</h1>
-        <p className="text-sm text-slate-500">Cadastre e acompanhe motoristas parceiros.</p>
-      </header>
+      <PageHeader
+        title="Motoristas"
+        description="Cadastre e acompanhe motoristas parceiros."
+        variant="soft"
+      />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar motorista' : 'Novo motorista'}</h2>

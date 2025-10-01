@@ -9,6 +9,7 @@ import { DocumentManager } from '../components/DocumentManager';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
 import { VehicleFinancialModal } from '../components/VehicleFinancialModal';
+import { PageHeader } from '../components/PageHeader';
 import type { Vehicle, VehicleFinancialSummary } from '../types';
 import { vehicleStatusLabel } from '../utils/labels';
 
@@ -191,10 +192,11 @@ const Vehicles: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-800">Veículos</h1>
-        <p className="text-sm text-slate-500">Cadastre novos veículos, acompanhe status e realize vendas.</p>
-      </header>
+      <PageHeader
+        title="Veículos"
+        description="Cadastre novos veículos, acompanhe status e realize vendas."
+        variant="soft"
+      />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
