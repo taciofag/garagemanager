@@ -1,10 +1,37 @@
 version: "3.9"
 
+volumes:
+  mysql_data:
+
 services:
+  db:
+    image: mysql:8.0
+    container_name: garage_db
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: .
     container_name: garage_api
+    depends_on:
+      db:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -17,7 +44,6 @@ services:
     volumes:
       - ./uploads:/app/uploads
     restart: unless-stopped
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   scheduler:
     build:
@@ -30,10 +56,9 @@ services:
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL}
       SECRET_KEY: ${SECRET_KEY:-changeme-in-prod}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@garage.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
     depends_on:
-      - api
+      api:
+        condition: service_started
     restart: unless-stopped
     command: ["./docker/scheduler.sh"]
 
@@ -41,7 +66,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-http://api:8000}
+        VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
     container_name: garage_frontend
     ports:
       - "${FRONTEND_PORT:-4173}:80"

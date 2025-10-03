@@ -242,30 +242,6 @@ async def seed() -> None:
             }
         )
 
-        await cash_repo.create_txn(
-            {
-                "id": "CSH-0001",
-                "date": date.today() - timedelta(days=5),
-                "type": CashTxnType.INFLOW,
-                "category": "Rent",
-                "amount": Decimal("500"),
-                "method": "Pix",
-                "related_vehicle_id": vehicle1.id,
-                "related_rental_id": rental.id,
-            }
-        )
-        await cash_repo.create_txn(
-            {
-                "id": "CSH-0002",
-                "date": date.today() - timedelta(days=3),
-                "type": CashTxnType.OUTFLOW,
-                "category": "Manutenção",
-                "amount": Decimal("300"),
-                "method": "Cartão",
-                "related_vehicle_id": vehicle2.id,
-            }
-        )
-
         await session.commit()
         print("Seed data inserted successfully.")
 
