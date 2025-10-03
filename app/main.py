@@ -1,10 +1,12 @@
 ﻿from __future__ import annotations
 
+import asyncio
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import DBAPIError
 
 from .config import settings
-from .db import AsyncSessionLocal, dispose_engine
+from .db import AsyncSessionLocal, dispose_engine, warm_db
 from .repositories.user import UserRepository
 from .routers import (
     auth,
@@ -47,21 +49,35 @@ app.include_router(documents.router)
 
 
 @app.on_event("startup")
-async def ensure_admin_user() -> None:
+async def startup() -> None:
+    # Aquece o DB para a primeira request não falhar abrindo conexão
+    await warm_db()
+
+    # Garante usuário admin com 1x retry se a conexão do pool vier invalidada
     async with AsyncSessionLocal() as session:
         repo = UserRepository(session)
-        existing = await repo.get_by_email(settings.default_admin_email)
-        if not existing:
-            await repo.create_user(
-                {
-                    "email": settings.default_admin_email,
-                    "hashed_password": get_password_hash(settings.default_admin_password),
-                    "full_name": "Administrator",
-                    "is_admin": True,
-                    "is_active": True,
-                }
-            )
-            await session.commit()
+        for attempt in (1, 2):
+            try:
+                existing = await repo.get_by_email(settings.default_admin_email)
+                if not existing:
+                    await repo.create_user(
+                        {
+                            "email": settings.default_admin_email,
+                            "hashed_password": get_password_hash(settings.default_admin_password),
+                            "full_name": "Administrator",
+                            "is_admin": True,
+                            "is_active": True,
+                        }
+                    )
+                    await session.commit()
+                break
+            except DBAPIError as e:
+                if getattr(e, "connection_invalidated", False) and attempt == 1:
+                    # fecha a sessão, espera um instante e tenta de novo
+                    await session.close()
+                    await asyncio.sleep(0.2)
+                    continue
+                raise
 
 
 @app.on_event("shutdown")
@@ -77,4 +93,3 @@ async def root() -> RedirectResponse:
 @app.get("/health", tags=["misc"])
 async def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
-
