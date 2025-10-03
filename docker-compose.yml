@@ -1,37 +1,10 @@
 version: "3.9"
 
-volumes:
-  mysql_data:
-
 services:
-  db:
-    image: mysql:8.0
-    container_name: garage_db
-    env_file:
-      - .env
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    ports:
-      - "${DB_PORT:-3306}:3306"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
     build:
       context: .
     container_name: garage_api
-    depends_on:
-      db:
-        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -52,6 +25,7 @@ services:
     env_file:
       - .env
     environment:
+      # dentro da rede do compose, a api é "api" (nome do serviço)
       API_BASE_URL: ${API_BASE_URL:-http://api:8000}
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: ${DATABASE_URL}
@@ -73,4 +47,3 @@ services:
     depends_on:
       - api
     restart: unless-stopped
-
