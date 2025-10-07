@@ -195,7 +195,6 @@ const Vehicles: React.FC = () => {
       <PageHeader
         title="Veículos"
         description="Cadastre novos veículos, acompanhe status e realize vendas."
-        variant="soft"
       />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -412,8 +411,22 @@ const Vehicles: React.FC = () => {
               { header: 'ID', key: 'id' },
               { header: 'Placa', key: 'plate' },
               { header: 'Modelo', key: 'model' },
-              { header: 'Ano fabr.', key: 'manufacture_year' },
-              { header: 'Ano modelo', key: 'model_year' },
+              {
+                header: 'Anos',
+                key: 'years',
+                render: (item) => (
+                  <div className="flex gap-2 text-xs text-slate-500">
+                    <div className="flex flex-col items-center rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+                      <span className="text-[10px] uppercase tracking-wide">Fabr.</span>
+                      <span className="text-sm font-semibold text-slate-700">{item.manufacture_year}</span>
+                    </div>
+                    <div className="flex flex-col items-center rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-indigo-600">
+                      <span className="text-[10px] uppercase tracking-wide">Modelo</span>
+                      <span className="text-sm font-semibold">{item.model_year}</span>
+                    </div>
+                  </div>
+                ),
+              },
               {
                 header: 'Status',
                 key: 'status',
@@ -491,4 +504,3 @@ const Vehicles: React.FC = () => {
 };
 
 export default Vehicles;
-

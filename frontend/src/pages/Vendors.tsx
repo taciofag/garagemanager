@@ -81,7 +81,6 @@ const Vendors: React.FC = () => {
       <PageHeader
         title="Fornecedores e Serviços"
         description="Mantenha o cadastro de fornecedores, oficinas e parceiros de serviços."
-        variant="soft"
       />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">

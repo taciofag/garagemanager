@@ -1,9 +1,11 @@
 ﻿import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const navItems = [
+const navItems: Array<{ to: string; label: string; adminOnly?: boolean }> = [
   { to: '/', label: 'Painel' },
+  { to: '/profile', label: 'Perfil' },
   { to: '/vehicles', label: 'Veículos' },
+  { to: '/maintenance', label: 'Manutenções' },
   { to: '/drivers', label: 'Motoristas' },
   { to: '/vendors', label: 'Fornecedores' },
   { to: '/rentals', label: 'Aluguéis' },
@@ -12,10 +14,12 @@ const navItems = [
   { to: '/capital', label: 'Capital' },
   { to: '/cash', label: 'Caixa' },
   { to: '/summary', label: 'Resumo' },
+  { to: '/admin/users', label: 'Usuários', adminOnly: true },
 ];
 
 export const Sidebar: React.FC = () => {
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
+  const visibleItems = navItems.filter((item) => (item.adminOnly ? isAdmin : true));
 
   return (
     <aside className="hidden w-60 flex-col border-r border-slate-200 bg-white lg:flex">
@@ -28,7 +32,7 @@ export const Sidebar: React.FC = () => {
       </Link>
       <nav className="flex-1 overflow-y-auto px-3 py-6">
         <ul className="space-y-1">
-          {navItems.map((item) => (
+          {visibleItems.map((item) => (
             <li key={item.to}>
               <NavLink
                 to={item.to}

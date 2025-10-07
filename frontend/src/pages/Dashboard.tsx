@@ -146,6 +146,7 @@ const Dashboard: React.FC = () => {
     { label: 'Veículos em estoque', value: summary.total_vehicles_stock },
     { label: 'Veículos alugados', value: summary.vehicles_rented },
     { label: 'Receita de aluguel (YTD)', value: currency(summary.rent_collected_ytd) },
+    { label: 'Aluguel previsto (mês)', value: currency(summary.rent_due_current_month) },
   ];
 
   const operationalStats = [
@@ -158,13 +159,23 @@ const Dashboard: React.FC = () => {
       subtitle: `Saldo: ${currency(summary.outstanding_rent_total)}`,
       tone: 'warning' as const,
     },
+    {
+      title: 'Manutenções abertas',
+      value: summary.maintenance_open_total,
+      subtitle: `Vencidas: ${summary.maintenance_overdue_total}`,
+      tone: summary.maintenance_overdue_total > 0 ? ('warning' as const) : undefined,
+    },
   ];
 
   const financialStats = [
     { title: 'Capital aportado', value: currency(summary.capital_in_total) },
     { title: 'Capital retirado', value: currency(summary.capital_out_total), tone: 'warning' as const },
     { title: 'Receita de aluguel (YTD)', value: currency(summary.rent_collected_ytd), tone: 'success' as const },
+    { title: 'Aluguel recebido (mês)', value: currency(summary.rent_collected_current_month), tone: 'success' as const },
+    { title: 'Previsto em manutenção (mês)', value: currency(summary.maintenance_month_estimated), tone: 'warning' as const },
     { title: 'Lucro em vendas (YTD)', value: currency(summary.profit_realized_sales_ytd) },
+    { title: 'Compras de veículos (YTD)', value: currency(summary.vehicle_purchase_outflow_ytd) },
+    { title: 'Receita com vendas (YTD)', value: currency(summary.vehicle_sale_revenue_ytd) },
     {
       title: 'Saldo em caixa',
       value: currency(summary.cash_balance),
@@ -327,6 +338,14 @@ const Dashboard: React.FC = () => {
               <div className="flex h-full items-center justify-center text-sm text-slate-400">Sem lançamentos no ano.</div>
             )}
           </div>
+          {hasExpenseCategoryData ? (
+            <p className="mt-4 text-sm text-slate-600">
+              Total no ano:{' '}
+              <span className="font-semibold text-slate-800">
+                {currency(summary.expenses_by_category_ytd_total)}
+              </span>
+            </p>
+          ) : null}
         </div>
       </section>
 

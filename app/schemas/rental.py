@@ -20,6 +20,7 @@ class RentalBase(DecimalModel):
     billing_day: BillingDay
     status: RentalStatus = RentalStatus.ACTIVE
     notes: Optional[str] = Field(default=None, max_length=255)
+    minimum_term_months: int = Field(default=3, ge=1, le=36)
 
 
 class RentalCreate(RentalBase):
@@ -36,6 +37,7 @@ class RentalUpdate(DecimalModel):
     billing_day: Optional[BillingDay] = None
     status: Optional[RentalStatus] = None
     notes: Optional[str] = Field(default=None, max_length=255)
+    minimum_term_months: Optional[int] = Field(default=None, ge=1, le=36)
 
 
 class RentalClose(BaseModel):

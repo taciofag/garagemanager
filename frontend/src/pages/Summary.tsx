@@ -25,7 +25,6 @@ const Summary: React.FC = () => {
       <PageHeader
         title="Resumo financeiro"
         description="Indicadores calculados em tempo real com base na base de dados."
-        variant="soft"
       />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -39,6 +38,22 @@ const Summary: React.FC = () => {
           value={currency(summary.rent_collected_ytd)}
           subtitle={`Lucro líquido em vendas YTD: ${currency(summary.profit_realized_sales_ytd)}`}
           tone="success"
+        />
+        <StatCard
+          title="Aluguel previsto (mês)"
+          value={currency(summary.rent_due_current_month)}
+          subtitle={`Recebido no mês: ${currency(summary.rent_collected_current_month)}`}
+        />
+        <StatCard
+          title="Compras de veículos (YTD)"
+          value={currency(summary.vehicle_purchase_outflow_ytd)}
+          subtitle={`Receita com vendas: ${currency(summary.vehicle_sale_revenue_ytd)}`}
+        />
+        <StatCard
+          title="Manutenções abertas"
+          value={summary.maintenance_open_total}
+          subtitle={`Previsto este mês: ${currency(summary.maintenance_month_estimated)}`}
+          tone={summary.maintenance_overdue_total ? 'warning' : undefined}
         />
       </div>
     </div>

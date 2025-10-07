@@ -57,5 +57,20 @@ class RentPayment(TimestampMixin, Base):
         paid = quantize_decimal(self.paid_amount) or Decimal("0")
         return quantize_decimal(due + late_fee - paid) or Decimal("0")
 
+    @property
+    def status(self) -> str:
+        today = date.today()
+        due = quantize_decimal(self.due_amount) or Decimal("0")
+        late_fee = quantize_decimal(self.late_fee) or Decimal("0")
+        paid = quantize_decimal(self.paid_amount) or Decimal("0")
+        total_due = due + late_fee
+        if paid >= total_due - Decimal("0.009") and self.payment_date:
+            return "paid"
+        if paid > Decimal("0"):
+            return "partial"
+        if self.period_end < today:
+            return "overdue"
+        return "scheduled"
+
 
 __all__ = ["RentPayment"]

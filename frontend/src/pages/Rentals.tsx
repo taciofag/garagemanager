@@ -169,7 +169,6 @@ const Rentals: React.FC = () => {
       <PageHeader
         title="Contratos de aluguel"
         description="Controle a alocação de veículos para motoristas e gere cobranças semanais."
-        variant="soft"
       />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">

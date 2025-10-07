@@ -43,6 +43,7 @@ class RentPaymentUpdate(DecimalModel):
 class RentPaymentRead(RentPaymentBase):
     id: str
     balance: Decimal
+    status: str
 
     model_config = {
         "from_attributes": True,
@@ -55,3 +56,9 @@ class RentPaymentGenerate(BaseModel):
     period_start: date
     period_end: date
 
+
+class RentPaymentScheduleRequest(BaseModel):
+    rental_id: str = Field(max_length=12)
+    months: Optional[int] = Field(default=None, ge=1, le=36)
+    until: Optional[date] = Field(default=None)
+    start_from: Optional[date] = Field(default=None)

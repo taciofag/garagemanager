@@ -21,7 +21,7 @@ router = APIRouter(prefix="/cash", tags=["cash"])
 async def list_cash_txns(
     pagination: PaginationParams = Depends(get_pagination_params),
     type: Optional[CashTxnType] = Query(default=None),
-    category: Optional[str] = Query(default=None),
+    category_id: Optional[str] = Query(default=None),
     start_date: Optional[date] = Query(default=None),
     end_date: Optional[date] = Query(default=None),
     session: AsyncSession = Depends(get_db),
@@ -31,7 +31,7 @@ async def list_cash_txns(
     result = await repo.list_txns(
         pagination,
         type=type,
-        category=category,
+        category_id=category_id,
         start_date=start_date,
         end_date=end_date,
     )
@@ -52,7 +52,10 @@ async def create_cash_txn(
     _: None = Depends(get_current_admin),
 ) -> CashTxnRead:
     repo = CashRepository(session)
-    txn = await repo.create_txn(payload.model_dump(exclude_none=True))
+    try:
+        txn = await repo.create_txn(payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
     return CashTxnRead.model_validate(txn)
 
@@ -82,7 +85,10 @@ async def update_cash_txn(
     txn = await repo.get(txn_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Cash transaction not found")
-    updated = await repo.update_txn(txn, payload.model_dump(exclude_none=True))
+    try:
+        updated = await repo.update_txn(txn, payload.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
     return CashTxnRead.model_validate(updated)
 
@@ -100,4 +106,3 @@ async def delete_cash_txn(
     await repo.delete(txn)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

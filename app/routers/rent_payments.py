@@ -15,6 +15,7 @@ from ..schemas.rent_payment import (
     RentPaymentCreate,
     RentPaymentGenerate,
     RentPaymentRead,
+    RentPaymentScheduleRequest,
     RentPaymentUpdate,
 )
 from ..services.security import get_current_active_user, get_current_admin
@@ -125,3 +126,25 @@ async def generate_weekly_payment(
     await session.commit()
     return RentPaymentRead.model_validate(payment)
 
+
+@router.post("/schedule", response_model=list[RentPaymentRead], status_code=status.HTTP_201_CREATED)
+async def schedule_payments(
+    payload: RentPaymentScheduleRequest,
+    session: AsyncSession = Depends(get_db),
+    _: None = Depends(get_current_admin),
+) -> list[RentPaymentRead]:
+    rental_repo = RentalRepository(session)
+    rental = await rental_repo.get(payload.rental_id)
+    if not rental:
+        raise HTTPException(status_code=404, detail="Rental not found")
+
+    repo = RentPaymentRepository(session)
+    generated = await repo.ensure_schedule(
+        rental,
+        months=payload.months,
+        until=payload.until,
+        start_from=payload.start_from,
+    )
+
+    await session.commit()
+    return [RentPaymentRead.model_validate(payment) for payment in generated]

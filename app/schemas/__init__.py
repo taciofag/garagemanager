@@ -12,9 +12,20 @@ from .rent_payment import (
 )
 from .capital import CapitalCreate, CapitalRead, CapitalUpdate
 from .cash import CashTxnCreate, CashTxnRead, CashTxnUpdate
-from .auth import UserCreate, UserRead, UserLogin, Token, TokenData
+from .cash_category import CashCategoryCreate, CashCategoryRead, CashCategoryUpdate
+from .auth import (
+    UserCreate,
+    UserRead,
+    UserUpdate,
+    UserProfileUpdate,
+    PasswordChange,
+    UserLogin,
+    Token,
+    TokenData,
+)
 from .summary import SummaryResponse
 from .document import DocumentRead, DocumentList, DocumentDeleteResponse
+from .maintenance import VehicleMaintenanceCreate, VehicleMaintenanceRead, VehicleMaintenanceUpdate
 from .common import PaginatedResult, PaginationParams
 
 __all__ = [
@@ -48,8 +59,14 @@ __all__ = [
     "CashTxnCreate",
     "CashTxnRead",
     "CashTxnUpdate",
+    "CashCategoryCreate",
+    "CashCategoryRead",
+    "CashCategoryUpdate",
     "UserCreate",
     "UserRead",
+    "UserUpdate",
+    "UserProfileUpdate",
+    "PasswordChange",
     "UserLogin",
     "Token",
     "TokenData",
@@ -57,6 +74,9 @@ __all__ = [
     "DocumentRead",
     "DocumentList",
     "DocumentDeleteResponse",
+    "VehicleMaintenanceCreate",
+    "VehicleMaintenanceRead",
+    "VehicleMaintenanceUpdate",
     "PaginatedResult",
     "PaginationParams",
 ]

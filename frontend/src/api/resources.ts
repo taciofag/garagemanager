@@ -1,17 +1,21 @@
-﻿import { api, apiBaseURL } from './client';
+import { api, apiBaseURL } from './client';
 import {
   CapitalEntry,
   CashTxn,
+  CashCategory,
   Driver,
   Vendor,
   Expense,
   PaginatedResponse,
+  Partner,
   RentPayment,
   Rental,
   SummaryMetrics,
+  User,
   Vehicle,
   DocumentItem,
   VehicleFinancialSummary,
+  VehicleMaintenanceTask,
 } from '../types';
 
 export const VehiclesApi = {
@@ -63,6 +67,8 @@ export const RentalsApi = {
   close: async (id: string, payload: { end_date: string }) =>
     (await api.post<Rental>(`/rentals/${id}/close`, payload)).data,
   remove: async (id: string) => api.delete(`/rentals/${id}`),
+  schedule: async (payload: { rental_id: string; months?: number; until?: string; start_from?: string }) =>
+    (await api.post<RentPayment[]>('/rent-payments/schedule', payload)).data,
 };
 
 export const ExpensesApi = {
@@ -82,6 +88,8 @@ export const RentPaymentsApi = {
   update: async (id: string, payload: Partial<RentPayment>) =>
     (await api.patch<RentPayment>(`/rent-payments/${id}`, payload)).data,
   remove: async (id: string) => api.delete(`/rent-payments/${id}`),
+  schedule: async (payload: { rental_id: string; months?: number; until?: string; start_from?: string }) =>
+    (await api.post<RentPayment[]>('/rent-payments/schedule', payload)).data,
 };
 
 export const CapitalApi = {
@@ -102,12 +110,34 @@ export const CashApi = {
   remove: async (id: string) => api.delete(`/cash/${id}`),
 };
 
+export const CashCategoriesApi = {
+  list: async (includeInactive = false) =>
+    (await api.get<CashCategory[]>(
+      '/cash-categories',
+      { params: includeInactive ? { include_inactive: true } : undefined }
+    )).data,
+  create: async (payload: { name: string; description?: string }) =>
+    (await api.post<CashCategory>('/cash-categories', payload)).data,
+  update: async (
+    id: string,
+    payload: { name?: string; description?: string; is_active?: boolean }
+  ) => (await api.patch<CashCategory>(`/cash-categories/${id}`, payload)).data,
+};
+
 export const SummaryApi = {
   get: async () => (await api.get<SummaryMetrics>('/summary')).data,
 };
 
-export const BillingApi = {
-  run: async () => (await api.post<{ generated: string[] }>('/billing/run', {})).data,
+export const MaintenanceApi = {
+  list: async (params: Record<string, unknown> = {}) =>
+    (await api.get<PaginatedResponse<VehicleMaintenanceTask>>('/maintenance', { params })).data,
+  create: async (payload: Partial<VehicleMaintenanceTask>) =>
+    (await api.post<VehicleMaintenanceTask>('/maintenance', payload)).data,
+  update: async (id: string, payload: Partial<VehicleMaintenanceTask>) =>
+    (await api.patch<VehicleMaintenanceTask>(`/maintenance/${id}`, payload)).data,
+  complete: async (id: string, params?: { completed_at?: string; status?: 'COMPLETED' | 'SKIPPED' }) =>
+    (await api.post<VehicleMaintenanceTask>(`/maintenance/${id}/complete`, {}, { params })).data,
+  remove: async (id: string) => api.delete(`/maintenance/${id}`),
 };
 
 export const DocumentsApi = {
@@ -123,7 +153,31 @@ export const DocumentsApi = {
     });
     return response.data;
   },
+  download: async (id: string) => api.get<Blob>(`/documents/${id}/download`, { responseType: 'blob' }),
   remove: async (id: string) => api.delete(`/documents/${id}`),
   downloadUrl: (id: string) => `${apiBaseURL}/documents/${id}/download`,
 };
 
+export const UsersApi = {
+  list: async () => (await api.get<User[]>('/users')).data,
+  create: async (payload: { email: string; password: string; full_name?: string; is_admin: boolean }) =>
+    (await api.post<User>('/users', payload)).data,
+  update: async (
+    id: number,
+    payload: { full_name?: string; is_admin?: boolean; is_active?: boolean; password?: string }
+  ) => (await api.patch<User>(`/users/${id}`, payload)).data,
+  remove: async (id: number) => api.delete(`/users/${id}`),
+};
+
+export const AuthApi = {
+  me: async () => (await api.get<User>('/auth/me')).data,
+  updateProfile: async (payload: { full_name?: string }) =>
+    (await api.patch<User>('/auth/me', payload)).data,
+  uploadAvatar: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return (await api.post<User>('/auth/me/avatar', formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+  },
+  changePassword: async (payload: { current_password: string; new_password: string }) =>
+    api.post('/auth/me/change-password', payload),
+};

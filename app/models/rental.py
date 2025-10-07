@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import CheckConstraint, Date, Enum as SQLEnum, ForeignKey, Index, Numeric, String
+from sqlalchemy import CheckConstraint, Date, Enum as SQLEnum, ForeignKey, Index, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -45,6 +45,7 @@ class Rental(TimestampMixin, Base):
         SQLEnum(RentalStatus, name="rental_status"), nullable=False, default=RentalStatus.ACTIVE
     )
     notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    minimum_term_months: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
 
     vehicle = relationship("Vehicle", back_populates="rentals")
     driver = relationship("Driver", back_populates="rentals")

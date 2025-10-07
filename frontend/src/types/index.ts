@@ -99,6 +99,7 @@ export interface Rental {
   billing_day: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
   status: 'Active' | 'Paused' | 'Closed';
   notes?: string;
+  minimum_term_months: number;
 }
 
 export interface Expense {
@@ -126,6 +127,7 @@ export interface RentPayment {
   payment_date?: string;
   late_fee: string;
   balance: string;
+  status: 'scheduled' | 'overdue' | 'partial' | 'paid';
   method?: string;
   notes?: string;
 }
@@ -139,15 +141,27 @@ export interface CapitalEntry {
   notes?: string;
 }
 
+export interface CashCategory {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  is_system: boolean;
+  description?: string;
+}
+
 export interface CashTxn {
   id: string;
   date: string;
   type: 'Inflow' | 'Outflow';
-  category: string;
+  category_id: string;
+  category: CashCategory;
   amount: string;
   method?: string;
   related_vehicle_id?: string;
   related_rental_id?: string;
+  related_expense_id?: string;
+  related_capital_id?: string;
   notes?: string;
 }
 
@@ -181,15 +195,32 @@ export interface SummaryMetrics {
   capital_in_total: string;
   capital_out_total: string;
   rent_collected_ytd: string;
+  rent_due_current_month: string;
+  rent_collected_current_month: string;
   profit_realized_sales_ytd: string;
+  vehicle_purchase_outflow_ytd: string;
+  vehicle_sale_revenue_ytd: string;
   outstanding_rent_total: string;
   open_rent_payments: number;
   cash_balance: string;
+  maintenance_open_total: number;
+  maintenance_overdue_total: number;
+  maintenance_month_estimated: string;
   vehicle_status_breakdown: SummaryVehicleStatus[];
   rent_collection_last_6_months: SummaryRentSeriesPoint[];
   expenses_last_6_months: SummaryValuePoint[];
   expenses_by_category_ytd: SummaryValuePoint[];
+  expenses_by_category_ytd_total: string;
   capital_balance_by_partner: SummaryPartnerBalance[];
+}
+
+export interface User {
+  id: number;
+  email: string;
+  full_name?: string;
+  is_active: boolean;
+  is_admin: boolean;
+  avatar_url?: string;
 }
 
 export interface DocumentItem {
@@ -201,4 +232,37 @@ export interface DocumentItem {
   size_bytes: number;
   storage_path: string;
   created_at: string;
+}
+
+export type MaintenanceCategory =
+  | 'Insurance'
+  | 'Tracker'
+  | 'OilChange'
+  | 'Tires'
+  | 'IPVA'
+  | 'Inspection'
+  | 'Service'
+  | 'Other';
+
+export type MaintenanceFrequency = 'Monthly' | 'Quarterly' | 'Semiannual' | 'Annual' | 'Kilometer' | 'OnDemand';
+
+export type MaintenanceStatus = 'OPEN' | 'COMPLETED' | 'SKIPPED';
+
+export interface VehicleMaintenanceTask {
+  id: string;
+  vehicle_id: string;
+  title: string;
+  category: MaintenanceCategory;
+  frequency?: MaintenanceFrequency;
+  due_date?: string;
+  odometer_due?: number;
+  amount: string;
+  status: MaintenanceStatus;
+  completed_at?: string;
+  notes?: string;
+  vendor_id?: string;
+  vendor_name?: string;
+  created_at: string;
+  updated_at: string;
+  series_id: string;
 }

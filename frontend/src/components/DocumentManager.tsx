@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 
 import { DocumentsApi } from '../api/resources';
 import type { DocumentItem } from '../types';
@@ -34,6 +34,11 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -53,8 +58,14 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
       setFeedback(null);
       setError(null);
       setIsDragOver(false);
+      setPreviewingId(null);
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+      setPreviewUrl(null);
+      setPreviewError(null);
     }
-  }, [isOpen]);
+  }, [isOpen, previewUrl]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -72,6 +83,69 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
     queryFn: () => DocumentsApi.list(entityType, entityId as string),
     enabled,
   });
+
+  const documents = documentsQuery.data ?? [];
+
+  const previewDoc = useMemo(() => {
+    if (!documents.length) {
+      return null;
+    }
+    if (previewingId) {
+      return documents.find((doc) => doc.id === previewingId) ?? documents[0];
+    }
+    return documents[0];
+  }, [documents, previewingId]);
+
+  useEffect(() => {
+    if (!previewDoc) {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
+      setPreviewError(null);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchPreview = async () => {
+      try {
+        setIsPreviewLoading(true);
+        setPreviewError(null);
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          setPreviewUrl(null);
+        }
+        const response = await DocumentsApi.download(previewDoc.id);
+        if (cancelled) {
+          return;
+        }
+        const blob = new Blob([response.data], {
+          type: response.headers['content-type'] ?? previewDoc.content_type,
+        });
+        const objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+      } catch (err) {
+        if (!cancelled) {
+          setPreviewError((err as Error).message ?? 'Não foi possível exibir o documento.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPreviewLoading(false);
+        }
+      }
+    };
+
+    fetchPreview();
+
+    return () => {
+      cancelled = true;
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewDoc?.id]);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => DocumentsApi.upload(entityType, entityId as string, file),
@@ -93,6 +167,9 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
       await queryClient.invalidateQueries({ queryKey: ['documents', entityType, entityId] });
       setFeedback('Documento removido.');
       setError(null);
+      if (previewingId === id) {
+        setPreviewingId(null);
+      }
     },
     onError: (err) => setError((err as Error).message),
   });
@@ -141,6 +218,34 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
     setIsDragOver(false);
   };
 
+  const handlePreview = (doc: DocumentItem) => {
+    if (previewingId === doc.id) {
+      return;
+    }
+    setPreviewingId(doc.id);
+  };
+
+  const handleDownload = async (doc: DocumentItem) => {
+    try {
+      setDownloadingId(doc.id);
+      setError(null);
+      const response = await DocumentsApi.download(doc.id);
+      const blob = new Blob([response.data], { type: response.headers['content-type'] ?? doc.content_type });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = doc.original_name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError((err as Error).message ?? 'Não foi possível baixar o documento.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   if (!isOpen) {
     return null;
   }
@@ -154,11 +259,13 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
         }
       }}
     >
-      <div className="flex w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+      <div className="flex w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
         <header className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
           <div>
             <h3 className="text-lg font-semibold text-slate-800">{title ?? 'Documentos anexados'}</h3>
-            <p className="text-xs text-slate-500">Arraste arquivos para a área abaixo ou utilize o botão para selecionar PDFs, imagens ou comprovantes.</p>
+            <p className="text-xs text-slate-500">
+              Arraste arquivos para a área abaixo ou utilize o botão para selecionar PDFs, imagens ou comprovantes.
+            </p>
           </div>
           <button
             type="button"
@@ -176,7 +283,7 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
         ) : (
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Total de documentos: {documentsQuery.data?.length ?? 0}</span>
+              <span>Total de documentos: {documents.length}</span>
               <div>
                 <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
                 <button
@@ -208,40 +315,98 @@ export const DocumentManager: React.FC<DocumentManagerProps> = ({
 
             {documentsQuery.isLoading ? (
               <Loading label="Carregando documentos..." />
-            ) : (documentsQuery.data?.length ?? 0) === 0 ? (
+            ) : documents.length === 0 ? (
               <div className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">
                 Nenhum documento anexado até o momento.
               </div>
             ) : (
-              <ul className="divide-y divide-slate-200 text-sm">
-                {(documentsQuery.data as DocumentItem[]).map((doc) => (
-                  <li key={doc.id} className="flex items-center justify-between py-3">
-                    <div>
-                      <div className="font-medium text-slate-700">{doc.original_name}</div>
-                      <div className="text-xs text-slate-400">
-                        {bytesToSize(doc.size_bytes)} - {new Date(doc.created_at).toLocaleString('pt-BR')}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <a
-                        href={DocumentsApi.downloadUrl(doc.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                      >
-                        Baixar
-                      </a>
-                      <button
-                        type="button"
-                        className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                        onClick={() => deleteMutation.mutate(doc.id)}
-                      >
-                        Excluir
+              <div className="grid gap-4 md:grid-cols-2">
+                <ul className="divide-y divide-slate-200 text-sm">
+                  {documents.map((doc) => (
+                    <li
+                      key={doc.id}
+                      className={`flex items-start justify-between gap-3 rounded-md px-2 py-3 ${
+                        previewDoc?.id === doc.id ? 'bg-primary/5' : ''
+                      }`}
+                    >
+                      <button type="button" onClick={() => handlePreview(doc)} className="flex-1 text-left">
+                        <div className="font-medium text-slate-700">{doc.original_name}</div>
+                        <div className="text-xs text-slate-400">
+                          {bytesToSize(doc.size_bytes)} · {new Date(doc.created_at).toLocaleString('pt-BR')}
+                        </div>
                       </button>
+                      <div className="flex flex-col gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => handlePreview(doc)}
+                          className="rounded-md border border-primary/40 px-2 py-1 font-medium text-primary hover:bg-primary/10"
+                        >
+                          Visualizar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(doc)}
+                          disabled={downloadingId === doc.id}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+                        >
+                          {downloadingId === doc.id ? 'Baixando...' : 'Baixar'}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50"
+                          onClick={() => deleteMutation.mutate(doc.id)}
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <div className="min-h-[320px] rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  {previewDoc ? (
+                    <div className="flex h-full flex-col gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-700">{previewDoc.original_name}</p>
+                        <p className="text-xs text-slate-400">Visualização rápida</p>
+                      </div>
+                      {previewError ? (
+                        <div className="flex flex-1 flex-col items-center justify-center rounded-md bg-red-50 text-center text-xs text-red-600">
+                          {previewError}
+                        </div>
+                      ) : isPreviewLoading || !previewUrl ? (
+                        <div className="flex flex-1 items-center justify-center">
+                          <Loading label="Carregando pré-visualização..." />
+                        </div>
+                      ) : previewDoc.content_type?.startsWith('image/') ? (
+                        <div className="flex flex-1 items-center justify-center overflow-hidden rounded-md bg-white">
+                          <img src={previewUrl} alt={previewDoc.original_name} className="max-h-full max-w-full object-contain" />
+                        </div>
+                      ) : previewDoc.content_type === 'application/pdf' || previewDoc.original_name.toLowerCase().endsWith('.pdf') ? (
+                        <iframe
+                          title={previewDoc.original_name}
+                          src={previewUrl}
+                          className="h-full w-full flex-1 rounded-md border border-slate-200 bg-white"
+                        />
+                      ) : (
+                        <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-slate-300 bg-white p-4 text-center text-xs text-slate-500">
+                          <span>Pré-visualização não disponível para este formato.</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(previewDoc)}
+                            className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                          >
+                            Baixar documento
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </li>
-                ))}
-              </ul>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-md border border-dashed border-slate-300 bg-white text-sm text-slate-500">
+                      Nenhum documento selecionado.
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         )}

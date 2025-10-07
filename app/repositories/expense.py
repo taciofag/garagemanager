@@ -9,9 +9,23 @@ from sqlalchemy.orm import selectinload
 from ..models.cash import CashTxnType
 from ..models.expense import Expense, ExpenseCategory
 from ..models.vehicle import Vehicle
+from ..utils.text import slugify
 from .cash import CashRepository
+from .cash_category import CashCategoryRepository
 from ..schemas.common import PaginationParams, PaginatedResult
 from .base import BaseRepository
+
+
+EXPENSE_CATEGORY_LABELS: dict[ExpenseCategory, str] = {
+    ExpenseCategory.PARTS: "Peças",
+    ExpenseCategory.REPAIR: "Reparo",
+    ExpenseCategory.TOWING: "Guincho",
+    ExpenseCategory.DOCS: "Documentação",
+    ExpenseCategory.AUCTION_FEE: "Taxa de leilão",
+    ExpenseCategory.TRANSFER: "Transferência",
+    ExpenseCategory.INSPECTION: "Inspeção",
+    ExpenseCategory.OTHER: "Outros",
+}
 
 
 class ExpenseRepository(BaseRepository[Expense]):
@@ -42,6 +56,7 @@ class ExpenseRepository(BaseRepository[Expense]):
     async def create_expense(self, data: dict) -> Expense:
         payload = data.copy()
         payload["id"] = payload.get("id") or await self.generate_id("EXP")
+        self._normalize_optional_fields(payload)
         expense = Expense(**payload)
         await self.create(expense)
         await self._touch_vehicle(expense.vehicle_id)
@@ -49,15 +64,20 @@ class ExpenseRepository(BaseRepository[Expense]):
         return expense
 
     async def update_expense(self, expense: Expense, data: dict) -> Expense:
-        for key, value in data.items():
-            if value is not None and hasattr(expense, key):
+        payload = data.copy()
+        self._normalize_optional_fields(payload)
+        for key, value in payload.items():
+            if hasattr(expense, key):
                 setattr(expense, key, value)
         await self.session.flush()
         await self._touch_vehicle(expense.vehicle_id)
         await self._sync_cash_for_expense(expense)
         return expense
 
-
+    def _normalize_optional_fields(self, payload: dict) -> None:
+        for optional_key in ("vendor_id", "invoice_no", "paid_with", "notes"):
+            if optional_key in payload and isinstance(payload[optional_key], str) and not payload[optional_key].strip():
+                payload[optional_key] = None
 
     async def delete_expense(self, expense: Expense) -> None:
         await self._remove_cash_for_expense(expense.id)
@@ -66,10 +86,14 @@ class ExpenseRepository(BaseRepository[Expense]):
 
     async def _sync_cash_for_expense(self, expense: Expense) -> None:
         cash_repo = CashRepository(self.session)
+        category_repo = CashCategoryRepository(self.session)
+        label = EXPENSE_CATEGORY_LABELS.get(expense.category, expense.category.value)
+        slug = f"expense-{slugify(label)}"
+        category = await category_repo.ensure_system_category(slug, label)
         payload = {
             "date": expense.date,
             "type": CashTxnType.OUTFLOW,
-            "category": expense.category.value,
+            "category_id": category.id,
             "amount": expense.amount,
             "method": expense.paid_with,
             "related_vehicle_id": expense.vehicle_id,
@@ -93,4 +117,3 @@ class ExpenseRepository(BaseRepository[Expense]):
         if vehicle:
             vehicle.sync_status()
             await self.session.flush()
-

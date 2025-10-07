@@ -194,12 +194,11 @@ const Capital: React.FC = () => {
     <>
       <div className="space-y-6">
         <PageHeader
-        title="Movimentações de capital"
-        description="Controle aportes e retiradas de sócios."
-        variant="soft"
-      />
+          title="Movimentações de capital"
+          description="Controle aportes e retiradas de sócios."
+        />
 
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar lançamento' : 'Novo lançamento'}</h2>
           <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit(onSubmit)}>
             <div className="md:col-span-3">

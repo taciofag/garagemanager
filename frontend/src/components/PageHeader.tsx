@@ -30,57 +30,64 @@ export interface PageHeaderProps {
   className?: string;
 }
 
+const sharedContainerStyles =
+  "relative overflow-hidden rounded-3xl border border-indigo-500/30 bg-gradient-to-br from-[#090f1f] via-[#162345] to-[#1e3a8a] p-8 text-slate-50 shadow-[0_38px_90px_-60px_rgba(15,23,42,1)] sm:p-10";
+
 const variantClasses: Record<PageHeaderVariant, string> = {
-  brand:
-    "relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6 text-slate-50 shadow-xl",
-  soft: "relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-sm",
+  brand: sharedContainerStyles,
+  soft: sharedContainerStyles,
 };
+
+const sharedDescriptionStyles = "text-sm text-slate-200 sm:text-base";
 
 const descriptionClasses: Record<PageHeaderVariant, string> = {
-  brand: "text-sm text-slate-300",
-  soft: "text-sm text-slate-500",
+  brand: sharedDescriptionStyles,
+  soft: sharedDescriptionStyles,
 };
+
+const sharedMetricCardStyles =
+  "rounded-2xl border border-white/15 bg-white/10 p-4 shadow-[0_26px_70px_-45px_rgba(15,23,42,0.95)] backdrop-blur";
 
 const metricCardClasses: Record<PageHeaderVariant, string> = {
-  brand: "rounded-xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm",
-  soft: "rounded-xl border border-slate-200 bg-slate-900/5 p-4",
+  brand: sharedMetricCardStyles,
+  soft: sharedMetricCardStyles,
 };
 
+const sharedMetricLabelStyles = "text-[11px] uppercase tracking-[0.18em] text-indigo-200";
+
 const metricLabelClasses: Record<PageHeaderVariant, string> = {
-  brand: "text-[11px] uppercase tracking-wide text-indigo-200",
-  soft: "text-[11px] uppercase tracking-wide text-slate-500",
+  brand: sharedMetricLabelStyles,
+  soft: sharedMetricLabelStyles,
+};
+
+const sharedToneMapping: Record<PageHeaderMetricTone, string> = {
+  default: "text-slate-50",
+  success: "text-emerald-200",
+  warning: "text-amber-200",
+  danger: "text-rose-200",
 };
 
 const metricToneClasses: Record<PageHeaderVariant, Record<PageHeaderMetricTone, string>> = {
-  brand: {
-    default: "text-white",
-    success: "text-emerald-300",
-    warning: "text-amber-300",
-    danger: "text-rose-300",
-  },
-  soft: {
-    default: "text-slate-900",
-    success: "text-emerald-600",
-    warning: "text-amber-600",
-    danger: "text-rose-600",
-  },
+  brand: sharedToneMapping,
+  soft: sharedToneMapping,
 };
 
-const overlayAccent = (
-  <svg
-    className="pointer-events-none absolute right-[-10%] top-[-20%] h-64 w-64 text-indigo-400/30"
-    viewBox="0 0 200 200"
-    aria-hidden="true"
-  >
-    <defs>
-      <radialGradient id="pageHeaderBlob" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stopColor="currentColor" />
-        <stop offset="100%" stopColor="transparent" />
-      </radialGradient>
-    </defs>
-    <circle cx="100" cy="100" r="100" fill="url(#pageHeaderBlob)" />
-  </svg>
-);
+const overlayAccents: Record<PageHeaderVariant, ReactNode | null> = {
+  brand: (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-sky-500/30 blur-[120px] sm:h-80 sm:w-80" />
+      <div className="absolute top-1/2 right-[-15%] h-80 w-80 -translate-y-1/2 rounded-full bg-indigo-500/35 blur-[140px]" />
+      <div className="absolute -bottom-28 left-1/4 h-64 w-64 rounded-full bg-violet-500/25 blur-[120px]" />
+    </div>
+  ),
+  soft: (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-sky-500/30 blur-[120px] sm:h-80 sm:w-80" />
+      <div className="absolute top-1/2 right-[-15%] h-80 w-80 -translate-y-1/2 rounded-full bg-indigo-500/35 blur-[140px]" />
+      <div className="absolute -bottom-28 left-1/4 h-64 w-64 rounded-full bg-violet-500/25 blur-[120px]" />
+    </div>
+  ),
+};
 
 export const PageHeader = ({
   title,
@@ -93,12 +100,12 @@ export const PageHeader = ({
   variant = "brand",
   className,
 }: PageHeaderProps) => {
-  const breadcrumbBase = variant === "brand" ? "text-slate-300" : "text-slate-500";
-  const breadcrumbLinkHover = variant === "brand" ? "hover:text-white" : "hover:text-indigo-600";
+  const breadcrumbBase = "text-slate-200";
+  const breadcrumbLinkHover = "hover:text-white";
 
   return (
     <header className={classNames(variantClasses[variant], className)}>
-      {variant === "brand" ? overlayAccent : null}
+      {overlayAccents[variant]}
       <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-3">
           {breadcrumbs && breadcrumbs.length ? (
@@ -118,12 +125,7 @@ export const PageHeader = ({
             </nav>
           ) : null}
           {eyebrow ? (
-            <p
-              className={classNames(
-                "text-xs font-semibold uppercase tracking-wider",
-                variant === "brand" ? "text-indigo-200" : "text-indigo-600"
-              )}
-            >
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200">
               {eyebrow}
             </p>
           ) : null}
@@ -144,19 +146,14 @@ export const PageHeader = ({
               <p className={metricLabelClasses[variant]}>{metric.label}</p>
               <p
                 className={classNames(
-                  "mt-2 text-lg font-semibold",
+                  "mt-2 text-2xl font-semibold",
                   metricToneClasses[variant][metric.tone ?? "default"]
                 )}
               >
                 {metric.value}
               </p>
               {metric.helper ? (
-                <p
-                  className={classNames(
-                    "mt-1 text-xs",
-                    variant === "brand" ? "text-indigo-100" : "text-slate-500"
-                  )}
-                >
+                <p className="mt-1 text-sm text-indigo-100/90">
                   {metric.helper}
                 </p>
               ) : null}

@@ -13,4 +13,5 @@ while true; do
   fi
   sleep "$sleep_sec"
   python -m app.scripts.run_billing || true
+  python -m app.scripts.ensure_maintenance || true
 done

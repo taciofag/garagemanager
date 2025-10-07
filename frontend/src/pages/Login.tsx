@@ -11,7 +11,7 @@ interface LoginForm {
 
 const Login: React.FC = () => {
   const { register, handleSubmit } = useForm<LoginForm>({
-    defaultValues: { email: 'admin@garage.local' },
+    defaultValues: { email: '' },
   });
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -73,7 +73,7 @@ const Login: React.FC = () => {
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-        <p className="mt-4 text-center text-xs text-slate-400">admin@garage.local / change-me</p>
+        <p className="mt-4 text-center text-xs text-slate-400">Informe seu e-mail e senha cadastrados.</p>
       </div>
     </div>
   );

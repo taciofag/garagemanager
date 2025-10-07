@@ -8,10 +8,12 @@ from sqlalchemy.exc import DBAPIError
 from .config import settings
 from .db import AsyncSessionLocal, dispose_engine, warm_db
 from .repositories.user import UserRepository
+from .repositories.maintenance import VehicleMaintenanceRepository
 from .routers import (
     auth,
     billing,
     cash,
+    cash_categories,
     capital,
     documents,
     drivers,
@@ -20,8 +22,10 @@ from .routers import (
     rent_payments,
     rentals,
     summary,
+    users,
     vehicles,
     vendors,
+    maintenance,
 )
 from .services.security import get_password_hash
 
@@ -43,9 +47,12 @@ app.include_router(rentals.router)
 app.include_router(rent_payments.router)
 app.include_router(capital.router)
 app.include_router(cash.router)
+app.include_router(cash_categories.router)
 app.include_router(summary.router)
 app.include_router(billing.router)
 app.include_router(documents.router)
+app.include_router(maintenance.router)
+app.include_router(users.router)
 
 
 @app.on_event("startup")
@@ -78,6 +85,11 @@ async def startup() -> None:
                     await asyncio.sleep(0.2)
                     continue
                 raise
+
+        maintenance_repo = VehicleMaintenanceRepository(session)
+        created = await maintenance_repo.ensure_all_series_future(months_ahead=12)
+        if created:
+            await session.commit()
 
 
 @app.on_event("shutdown")

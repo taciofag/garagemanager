@@ -18,6 +18,7 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    avatar_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 __all__ = ["User"]

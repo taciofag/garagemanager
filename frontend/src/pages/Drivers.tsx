@@ -118,7 +118,6 @@ const Drivers: React.FC = () => {
       <PageHeader
         title="Motoristas"
         description="Cadastre e acompanhe motoristas parceiros."
-        variant="soft"
       />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">

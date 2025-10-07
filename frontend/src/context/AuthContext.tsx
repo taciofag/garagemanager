@@ -2,12 +2,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import axios from 'axios';
 
 import { api, setUnauthorizedHandler } from '../api/client';
+import { AuthApi } from '../api/resources';
+import type { User } from '../types';
 
 interface AuthContextProps {
   token: string | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  currentUser: User | null;
+  isAdmin: boolean;
+  refreshCurrentUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
@@ -22,6 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return saved;
   });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -37,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (token) {
       inactivityTimerRef.current = setTimeout(() => {
         setToken(null);
+        setCurrentUser(null);
         if (!window.location.pathname.startsWith('/login')) {
           window.location.href = '/login';
         }
@@ -44,24 +51,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [token, clearInactivityTimer]);
 
+  const handleUnauthorized = useCallback(() => {
+    clearInactivityTimer();
+    setToken(null);
+    setCurrentUser(null);
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+  }, [clearInactivityTimer]);
+
+  const fetchCurrentUser = useCallback(async () => {
+    if (!token) {
+      setCurrentUser(null);
+      return;
+    }
+    try {
+      const me = await AuthApi.me();
+      setCurrentUser(me);
+    } catch {
+      handleUnauthorized();
+    }
+  }, [token, handleUnauthorized]);
+
   useEffect(() => {
     if (token) {
       api.defaults.headers.common.Authorization = `Bearer ${token}`;
       localStorage.setItem(STORAGE_KEY, token);
       startInactivityTimer();
+      void fetchCurrentUser();
     } else {
       delete api.defaults.headers.common.Authorization;
       localStorage.removeItem(STORAGE_KEY);
       clearInactivityTimer();
+      setCurrentUser(null);
     }
-  }, [token, startInactivityTimer, clearInactivityTimer]);
-  const handleUnauthorized = useCallback(() => {
-    clearInactivityTimer();
-    setToken(null);
-    if (!window.location.pathname.startsWith('/login')) {
-      window.location.href = '/login';
-    }
-  }, [clearInactivityTimer]);
+  }, [token, startInactivityTimer, clearInactivityTimer, fetchCurrentUser]);
 
   useEffect(() => {
     if (token) {
@@ -107,10 +131,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearInactivityTimer();
       inactivityTimerRef.current = setTimeout(() => {
         setToken(null);
+        setCurrentUser(null);
         if (!window.location.pathname.startsWith('/login')) {
           window.location.href = '/login';
         }
       }, INACTIVITY_TIMEOUT_MS);
+      try {
+        const me = await AuthApi.me();
+        setCurrentUser(me);
+      } catch {
+        handleUnauthorized();
+      }
     } catch {
       throw new Error('Falha no login. Verifique suas credenciais.');
     }
@@ -119,6 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(() => {
     clearInactivityTimer();
     setToken(null);
+    setCurrentUser(null);
   }, [clearInactivityTimer]);
 
   const value = useMemo(
@@ -127,8 +159,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: Boolean(token),
       login,
       logout,
+      currentUser,
+      isAdmin: Boolean(currentUser?.is_admin),
+      refreshCurrentUser: fetchCurrentUser,
     }),
-    [token, logout]
+    [token, logout, currentUser, fetchCurrentUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -141,4 +176,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

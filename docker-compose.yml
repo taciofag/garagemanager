@@ -21,6 +21,8 @@
     build:
       context: .
     container_name: garage_scheduler
+    profiles:
+      - billing
     env_file:
       - .env
     environment:

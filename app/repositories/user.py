@@ -20,3 +20,14 @@ class UserRepository(BaseRepository[User]):
         await self.create(user)
         return user
 
+    async def list_users(self) -> list[User]:
+        stmt = select(User).order_by(User.created_at.asc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def update_user(self, user: User, data: dict) -> User:
+        for key, value in data.items():
+            if value is not None and hasattr(user, key):
+                setattr(user, key, value)
+        await self.session.flush()
+        return user

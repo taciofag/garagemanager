@@ -7,13 +7,14 @@ from typing import Annotated, Optional
 from pydantic import BaseModel, Field
 
 from ..models.cash import CashTxnType
+from .cash_category import CashCategoryRead
 from .common import DecimalModel
 
 
 class CashTxnBase(DecimalModel):
     date: date
     type: CashTxnType
-    category: str = Field(max_length=50)
+    category_id: str = Field(max_length=12)
     amount: Decimal
     method: Optional[str] = Field(default=None, max_length=50)
     related_vehicle_id: Optional[str] = Field(default=None, max_length=12)
@@ -30,7 +31,7 @@ class CashTxnCreate(CashTxnBase):
 class CashTxnUpdate(DecimalModel):
     date: Annotated[Optional[date], Field(default=None)]
     type: Optional[CashTxnType] = None
-    category: Optional[str] = Field(default=None, max_length=50)
+    category_id: Optional[str] = Field(default=None, max_length=12)
     amount: Optional[Decimal] = None
     method: Optional[str] = Field(default=None, max_length=50)
     related_vehicle_id: Optional[str] = Field(default=None, max_length=12)
@@ -42,6 +43,8 @@ class CashTxnUpdate(DecimalModel):
 
 class CashTxnRead(CashTxnBase):
     id: str
+    category_id: Optional[str] = None
+    category: Optional[CashCategoryRead] = None
 
     model_config = {
         "from_attributes": True,

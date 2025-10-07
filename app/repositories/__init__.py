@@ -7,8 +7,10 @@ from .rent_payment import RentPaymentRepository
 from .capital import CapitalRepository
 from .partner import PartnerRepository
 from .cash import CashRepository
+from .cash_category import CashCategoryRepository
 from .user import UserRepository
 from .document import DocumentRepository
+from .maintenance import VehicleMaintenanceRepository
 
 __all__ = [
     "VehicleRepository",
@@ -20,7 +22,8 @@ __all__ = [
     "CapitalRepository",
     "PartnerRepository",
     "CashRepository",
+    "CashCategoryRepository",
     "UserRepository",
     "DocumentRepository",
+    "VehicleMaintenanceRepository",
 ]
-

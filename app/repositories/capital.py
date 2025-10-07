@@ -7,7 +7,9 @@ from sqlalchemy import and_
 
 from ..models.cash import CashTxnType
 from ..models.capital import CapitalEntry, CapitalType
+from ..utils.text import slugify
 from .cash import CashRepository
+from .cash_category import CashCategoryRepository
 from ..schemas.common import PaginationParams, PaginatedResult
 from .base import BaseRepository
 
@@ -61,10 +63,14 @@ class CapitalRepository(BaseRepository[CapitalEntry]):
     async def _sync_cash_for_capital(self, entry: CapitalEntry) -> None:
         cash_repo = CashRepository(self.session)
         cash_type = CashTxnType.INFLOW if entry.type == CapitalType.CONTRIBUTION else CashTxnType.OUTFLOW
+        category_repo = CashCategoryRepository(self.session)
+        base_label = "Aportes" if cash_type == CashTxnType.INFLOW else "Retiradas"
+        slug = f"capital-{slugify(base_label)}"
+        category = await category_repo.ensure_system_category(slug, base_label)
         payload = {
             "date": entry.date,
             "type": cash_type,
-            "category": "Capital",
+            "category_id": category.id,
             "amount": entry.amount,
             "related_capital_id": entry.id,
             "notes": entry.notes or f"{entry.partner} - {entry.type.value}",
@@ -80,4 +86,3 @@ class CapitalRepository(BaseRepository[CapitalEntry]):
         existing = await cash_repo.get_by_related_capital(capital_id)
         if existing:
             await cash_repo.delete(existing)
-

@@ -1,18 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { CashApi, RentalsApi, VehiclesApi } from '../api/resources';
+import { CashApi, CashCategoriesApi, RentalsApi, VehiclesApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
 import { PageHeader } from '../components/PageHeader';
-import type { CashTxn } from '../types';
+import { useAuth } from '../context/AuthContext';
+import type { CashTxn, CashCategory } from '../types';
 import { cashTypeLabel } from '../utils/labels';
+import { CashCategoryManager } from '../components/CashCategoryManager';
 
 interface CashForm {
   date: string;
   type: CashTxn['type'];
-  category: string;
+  category_id: string;
   amount: number;
   method?: string;
   related_vehicle_id?: string;
@@ -23,7 +25,7 @@ interface CashForm {
 const buildDefaultValues = (): CashForm => ({
   date: new Date().toISOString().slice(0, 10),
   type: 'Inflow',
-  category: '',
+  category_id: '',
   amount: 0,
   method: '',
   related_vehicle_id: '',
@@ -32,11 +34,14 @@ const buildDefaultValues = (): CashForm => ({
 });
 
 const Cash: React.FC = () => {
+  const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const cashQuery = useQuery({ queryKey: ['cash'], queryFn: () => CashApi.list() });
   const vehiclesQuery = useQuery({ queryKey: ['vehicles', 'cash'], queryFn: () => VehiclesApi.list({ page_size: 100 }) });
   const rentalsQuery = useQuery({ queryKey: ['rentals', 'cash'], queryFn: () => RentalsApi.list({ page_size: 100 }) });
+  const categoriesQuery = useQuery({ queryKey: ['cash-categories'], queryFn: () => CashCategoriesApi.list() });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
 
   const vehiclesById = useMemo(() => {
     const dictionary: Record<string, { plate?: string; make?: string; model?: string }> = {};
@@ -58,7 +63,8 @@ const Cash: React.FC = () => {
     );
   }, [rentalsQuery.data, vehiclesById]);
 
-  const { register, handleSubmit, reset } = useForm<CashForm>({ defaultValues: buildDefaultValues() });
+  const { register, handleSubmit, reset, setValue, watch } = useForm<CashForm>({ defaultValues: buildDefaultValues() });
+  const selectedCategoryId = watch('category_id');
 
   const handleResetForm = () => {
     reset(buildDefaultValues());
@@ -91,7 +97,7 @@ const Cash: React.FC = () => {
     reset({
       date: txn.date,
       type: txn.type,
-      category: txn.category,
+      category_id: txn.category_id,
       amount: Number(txn.amount ?? 0),
       method: txn.method ?? '',
       related_vehicle_id: txn.related_vehicle_id ?? '',
@@ -104,7 +110,7 @@ const Cash: React.FC = () => {
     const payload: Partial<CashTxn> = {
       date: data.date,
       type: data.type,
-      category: data.category,
+      category_id: data.category_id,
       amount: data.amount.toString(),
       method: data.method,
       related_vehicle_id: data.related_vehicle_id || undefined,
@@ -113,7 +119,6 @@ const Cash: React.FC = () => {
     };
 
     if (editingId) {
-      console.log('payload cash update', payload);
       updateTxn.mutate({ id: editingId, payload });
     } else {
       createTxn.mutate(payload);
@@ -123,16 +128,32 @@ const Cash: React.FC = () => {
   const isSaving = createTxn.isPending || updateTxn.isPending;
   const isEditing = Boolean(editingId);
 
+  useEffect(() => {
+    if (!isEditing && !selectedCategoryId && categoriesQuery.data?.length) {
+      setValue('category_id', categoriesQuery.data[0].id);
+    }
+  }, [isEditing, selectedCategoryId, categoriesQuery.data, setValue]);
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Livro-caixa"
         description="Registre entradas e saídas financeiras da operação."
-        variant="soft"
       />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-slate-700">{isEditing ? 'Editar transação' : 'Nova transação'}</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-700">{isEditing ? 'Editar transação' : 'Nova transação'}</h2>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setCategoryManagerOpen(true)}
+              className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-indigo-600 hover:border-indigo-300 hover:bg-indigo-100"
+            >
+              Gerenciar categorias
+            </button>
+          ) : null}
+        </div>
         <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit(onSubmit)}>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Data</label>
@@ -147,7 +168,23 @@ const Cash: React.FC = () => {
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria</label>
-            <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('category', { required: true })} />
+            <select
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              {...register('category_id', { required: true })}
+              disabled={categoriesQuery.isLoading}
+            >
+              <option value="">Selecione...</option>
+              {categoriesQuery.data?.map((category: CashCategory) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+            {categoriesQuery.isError ? (
+              <p className="mt-1 text-xs text-red-600">Erro ao carregar categorias.</p>
+            ) : !categoriesQuery.isLoading && (categoriesQuery.data?.length ?? 0) === 0 ? (
+              <p className="mt-1 text-xs text-slate-500">Cadastre pelo menos uma categoria para registrar transações.</p>
+            ) : null}
           </div>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Valor (R$)</label>
@@ -220,7 +257,11 @@ const Cash: React.FC = () => {
                 key: 'type',
                 render: (item) => cashTypeLabel(item.type),
               },
-              { header: 'Categoria', key: 'category' },
+              {
+                header: 'Categoria',
+                key: 'category',
+                render: (item) => item.category?.name ?? '-',
+              },
               {
                 header: 'Valor',
                 key: 'amount',
@@ -257,6 +298,7 @@ const Cash: React.FC = () => {
           />
         )}
       </section>
+      <CashCategoryManager open={categoryManagerOpen} onClose={() => setCategoryManagerOpen(false)} />
     </div>
   );
 };

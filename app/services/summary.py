@@ -11,7 +11,8 @@ from sqlalchemy.orm import selectinload
 from ..models.capital import CapitalEntry, CapitalType
 from ..models.cash import CashTxn, CashTxnType
 from ..models.common import quantize_decimal
-from ..models.expense import Expense
+from ..models.expense import Expense, ExpenseCategory
+from ..models.maintenance import MaintenanceStatus, VehicleMaintenance
 from ..models.rent_payment import RentPayment
 from ..models.vehicle import Vehicle, VehicleStatus
 from ..schemas.summary import (
@@ -220,15 +221,24 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
             select(Expense.category, func.coalesce(func.sum(Expense.amount), 0)).where(
                 and_(Expense.date >= year_start, Expense.date <= today)
             ).group_by(Expense.category)
-        )
+    )
     ).all()
-    expenses_by_category_ytd = [
-        SummaryValuePoint(
-            label=category.value if hasattr(category, "value") else str(category),
-            value=quantize_decimal(Decimal(total or 0)) or Decimal("0"),
+    expenses_by_category_ytd: list[SummaryValuePoint] = []
+    expenses_by_category_ytd_total = Decimal("0")
+    for category, total in category_rows:
+        decimal_total = quantize_decimal(Decimal(total or 0)) or Decimal("0")
+        expenses_by_category_ytd_total += decimal_total
+        label = (
+            EXPENSE_CATEGORY_LABELS.get(category) if isinstance(category, ExpenseCategory) else str(category)
         )
-        for category, total in category_rows
-    ]
+        if not label and hasattr(category, "value"):
+            label = EXPENSE_CATEGORY_LABELS.get(category, category.value)
+        expenses_by_category_ytd.append(
+            SummaryValuePoint(
+                label=label or str(category),
+                value=decimal_total,
+            )
+        )
 
     # Capital balance per partner
     capital_rows = (
@@ -258,6 +268,49 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         for partner, values in sorted(capital_totals.items())
     ]
 
+    current_month_key = (today.year, today.month)
+    rent_due_current_month = quantize_decimal(due_map[current_month_key]) or Decimal("0")
+    rent_collected_current_month = quantize_decimal(collected_map[current_month_key]) or Decimal("0")
+
+    acquisition_outflow = await session.scalar(
+        select(func.coalesce(func.sum(Vehicle.acquisition_price), 0)).where(
+            and_(
+                Vehicle.acquisition_date >= year_start,
+                Vehicle.acquisition_date <= today,
+            )
+        )
+    )
+
+    sale_revenue = await session.scalar(
+        select(func.coalesce(func.sum(Vehicle.sale_price), 0)).where(
+            and_(
+                Vehicle.sale_date.is_not(None),
+                Vehicle.sale_date >= year_start,
+                Vehicle.sale_date <= today,
+            )
+        )
+    )
+
+    maintenance_rows = (
+        await session.execute(
+            select(VehicleMaintenance.status, VehicleMaintenance.due_date, VehicleMaintenance.amount)
+        )
+    ).all()
+    maintenance_open_total = 0
+    maintenance_overdue_total = 0
+    maintenance_month_estimated = Decimal("0")
+    for status_value, due_date_value, amount_value in maintenance_rows:
+        status_enum = status_value if isinstance(status_value, MaintenanceStatus) else MaintenanceStatus(status_value)
+        is_open = status_enum == MaintenanceStatus.OPEN
+        if is_open:
+            maintenance_open_total += 1
+        if is_open and due_date_value and due_date_value < today:
+            maintenance_overdue_total += 1
+        if is_open and due_date_value and due_date_value.year == today.year and due_date_value.month == today.month:
+            maintenance_month_estimated += Decimal(amount_value or 0)
+
+    maintenance_month_estimated = quantize_decimal(maintenance_month_estimated) or Decimal("0")
+
     return SummaryResponse(
         total_vehicles_stock=int(total_stock or 0),
         vehicles_rented=int(vehicles_rented or 0),
@@ -265,13 +318,31 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         capital_in_total=quantize_decimal(capital_in_total) or Decimal("0"),
         capital_out_total=quantize_decimal(capital_out_total) or Decimal("0"),
         rent_collected_ytd=quantize_decimal(rent_collected_ytd) or Decimal("0"),
+        rent_due_current_month=rent_due_current_month,
+        rent_collected_current_month=rent_collected_current_month,
         profit_realized_sales_ytd=quantize_decimal(profit_realized_sales_ytd) or Decimal("0"),
+        vehicle_purchase_outflow_ytd=quantize_decimal(acquisition_outflow) or Decimal("0"),
+        vehicle_sale_revenue_ytd=quantize_decimal(sale_revenue) or Decimal("0"),
         outstanding_rent_total=outstanding_rent_total,
         open_rent_payments=open_rent_payments,
         cash_balance=cash_balance,
+        maintenance_open_total=maintenance_open_total,
+        maintenance_overdue_total=maintenance_overdue_total,
+        maintenance_month_estimated=maintenance_month_estimated,
         vehicle_status_breakdown=vehicle_status_breakdown,
         rent_collection_last_6_months=rent_collection_last_6_months,
         expenses_last_6_months=expenses_last_6_months,
         expenses_by_category_ytd=expenses_by_category_ytd,
+        expenses_by_category_ytd_total=quantize_decimal(expenses_by_category_ytd_total) or Decimal("0"),
         capital_balance_by_partner=capital_balance_by_partner,
     )
+EXPENSE_CATEGORY_LABELS: dict[ExpenseCategory, str] = {
+    ExpenseCategory.PARTS: "Peças",
+    ExpenseCategory.REPAIR: "Reparo",
+    ExpenseCategory.TOWING: "Guincho",
+    ExpenseCategory.DOCS: "Documentação",
+    ExpenseCategory.AUCTION_FEE: "Taxa de leilão",
+    ExpenseCategory.TRANSFER: "Transferência",
+    ExpenseCategory.INSPECTION: "Inspeção",
+    ExpenseCategory.OTHER: "Outros",
+}

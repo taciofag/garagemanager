@@ -51,6 +51,9 @@ class Vehicle(TimestampMixin, Base):
     current_driver = relationship("Driver", back_populates="active_vehicle", foreign_keys=[current_driver_id])
     expenses = relationship("Expense", back_populates="vehicle", cascade="all, delete-orphan")
     rentals = relationship("Rental", back_populates="vehicle", cascade="all, delete-orphan")
+    maintenance_items = relationship(
+        "VehicleMaintenance", back_populates="vehicle", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("acquisition_price >= 0", name="ck_vehicle_acquisition_price_positive"),
