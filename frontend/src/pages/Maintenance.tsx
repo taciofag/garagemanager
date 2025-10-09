@@ -1,349 +1,715 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-import { format, isBefore, parseISO } from 'date-fns';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { addDays, format, parseISO, startOfDay } from 'date-fns';
 
-import { MaintenanceApi, VehiclesApi, VendorsApi } from '../api/resources';
+import { CashCategoriesApi, MaintenanceApi, VehiclesApi, VendorsApi } from '../api/resources';
 import { DataTable } from '../components/DataTable';
 import { Loading } from '../components/Loading';
 import { PageHeader } from '../components/PageHeader';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import { useAuth } from '../context/AuthContext';
 import type {
-  MaintenanceCategory,
+  MaintenanceActionResponse,
+  MaintenanceOccurrence,
+  MaintenanceOccurrenceStatus,
+  MaintenanceOccurrencesResponse,
   MaintenanceFrequency,
-  MaintenanceStatus,
+  MaintenanceSeries,
+  MaintenanceSeriesStatus,
+  MaintenanceSummary,
+  MaintenancePayRequest,
   Vehicle,
-  VehicleMaintenanceTask,
   Vendor,
 } from '../types';
-import { useAuth } from '../context/AuthContext';
 
-interface MaintenanceForm {
-  vehicle_id: string;
-  title: string;
-  category: MaintenanceCategory;
-  frequency?: MaintenanceFrequency;
-  due_date?: string;
-  odometer_due?: number;
-  amount?: number;
-  notes?: string;
-  vendor_id?: string;
+interface PaymentFormState {
+  paidAt: string;
+  note: string;
+  cashCategoryId: string;
+  paymentMethod: string;
 }
 
-const CATEGORY_OPTIONS: Array<{ value: MaintenanceCategory; label: string }> = [
-  { value: 'INSURANCE', label: 'Seguro' },
-  { value: 'TRACKER', label: 'Rastreador' },
-  { value: 'OIL_CHANGE', label: 'Troca de óleo' },
-  { value: 'TIRES', label: 'Pneus' },
-  { value: 'IPVA', label: 'IPVA / licenciamento' },
-  { value: 'INSPECTION', label: 'Vistoria / inspeção' },
-  { value: 'SERVICE', label: 'Revisão / serviço' },
-  { value: 'OTHER', label: 'Outro' },
+type TabScope = 'upcoming' | 'overdue' | 'history';
+
+interface FiltersState {
+  status: MaintenanceOccurrenceStatus | 'all';
+  vehicleId: string;
+  supplierId: string;
+  category: string;
+}
+
+interface SeriesFormValues {
+  vehicle_id: string;
+  title: string;
+  category?: string;
+  supplier_id?: string;
+  frequency: MaintenanceFrequency;
+  start_date: string;
+  end_date?: string;
+  amount?: number;
+  status: MaintenanceSeriesStatus;
+  day_rule_mode: 'same_day' | 'fixed_day';
+  fixed_day?: number;
+}
+
+const TAB_CONFIG: Array<{ value: TabScope; label: string }> = [
+  { value: 'upcoming', label: 'Próximos (30d)' },
+  { value: 'overdue', label: 'Vencidos' },
+  { value: 'history', label: 'Histórico' },
+];
+
+const STATUS_LABELS: Record<MaintenanceOccurrenceStatus, string> = {
+  open: 'Aberto',
+  paid: 'Pago',
+  ignored: 'Ignorado',
+  canceled: 'Cancelado',
+};
+
+const STATUS_TONES: Record<MaintenanceOccurrenceStatus, string> = {
+  open: 'bg-amber-50 text-amber-700 border border-amber-200',
+  paid: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  ignored: 'bg-slate-100 text-slate-500 border border-slate-200',
+  canceled: 'bg-rose-50 text-rose-600 border border-rose-200',
+};
+
+const FREQUENCY_LABELS: Record<MaintenanceFrequency, string> = {
+  monthly: 'Mensal',
+  yearly: 'Anual',
+  weekly: 'Semanal',
+  on_demand: 'Sob demanda',
+};
+
+const SERIES_STATUS_OPTIONS: Array<{ value: MaintenanceSeriesStatus; label: string }> = [
+  { value: 'active', label: 'Ativo' },
+  { value: 'paused', label: 'Pausado' },
+  { value: 'canceled', label: 'Cancelado' },
+];
+
+const OCCURRENCE_STATUS_FILTERS: Array<{ value: MaintenanceOccurrenceStatus | 'all'; label: string }> = [
+  { value: 'all', label: 'Todos os status' },
+  { value: 'open', label: 'Abertos' },
+  { value: 'paid', label: 'Pagos' },
+  { value: 'ignored', label: 'Ignorados' },
+  { value: 'canceled', label: 'Cancelados' },
 ];
 
 const FREQUENCY_OPTIONS: Array<{ value: MaintenanceFrequency; label: string }> = [
-  { value: 'MONTHLY', label: 'Mensal' },
-  { value: 'QUARTERLY', label: 'Trimestral' },
-  { value: 'SEMIANNUAL', label: 'Semestral' },
-  { value: 'ANNUAL', label: 'Anual' },
-  { value: 'KILOMETER', label: 'Por quilometragem' },
-  { value: 'ON_DEMAND', label: 'Sob demanda' },
+  { value: 'monthly', label: 'Mensal' },
+  { value: 'weekly', label: 'Semanal' },
+  { value: 'yearly', label: 'Anual' },
+  { value: 'on_demand', label: 'Sob demanda' },
 ];
 
-const STATUS_LABEL: Record<MaintenanceStatus, string> = {
-  OPEN: 'Aberto',
-  COMPLETED: 'Concluído',
-  SKIPPED: 'Ignorado',
+const PAGE_SIZE = 25;
+
+const currencyFormatter = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  minimumFractionDigits: 2,
+});
+
+const formatCurrency = (value: string | number | undefined) => currencyFormatter.format(Number(value ?? 0));
+
+const defaultFilters: FiltersState = {
+  status: 'all',
+  vehicleId: '',
+  supplierId: '',
+  category: '',
 };
 
-const STATUS_TONE: Record<MaintenanceStatus, string> = {
-  OPEN: 'bg-amber-50 text-amber-700 border border-amber-200',
-  COMPLETED: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  SKIPPED: 'bg-slate-50 text-slate-500 border border-slate-200',
-};
-
-const formatCurrency = (value: number | string | undefined) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value ?? 0));
-
-const buildDefaultFormValues = (): MaintenanceForm => ({
+const defaultFormValues: SeriesFormValues = {
   vehicle_id: '',
   title: '',
-  category: 'SERVICE',
-  frequency: undefined,
-  due_date: '',
-  odometer_due: undefined,
+  category: '',
+  supplier_id: '',
+  frequency: 'monthly',
+  start_date: '',
+  end_date: '',
   amount: undefined,
-  notes: '',
-  vendor_id: '',
-});
+  status: 'active',
+  day_rule_mode: 'same_day',
+  fixed_day: undefined,
+};
+
+function makeVehicleLabel(vehicle: Vehicle) {
+  const parts = [vehicle.plate?.toUpperCase(), vehicle.make, vehicle.model].filter(Boolean);
+  return parts.join(' · ') || vehicle.id;
+}
+
+function matchesFilters(
+  item: MaintenanceOccurrence,
+  scope: TabScope,
+  filters: FiltersState,
+  referenceToday: Date,
+  daysWindow: number,
+) {
+  if (filters.status !== 'all' && item.status !== filters.status) {
+    return false;
+  }
+  if (filters.vehicleId && item.vehicle_id !== filters.vehicleId) {
+    return false;
+  }
+  if (filters.supplierId && item.supplier_id !== filters.supplierId) {
+    return false;
+  }
+  if (filters.category && (item.category ?? '') !== filters.category) {
+    return false;
+  }
+
+  const dueDate = startOfDay(parseISO(item.due_date));
+  const horizon = addDays(referenceToday, daysWindow);
+
+  if (scope === 'upcoming') {
+    return item.status === 'open' && dueDate >= referenceToday && dueDate <= horizon;
+  }
+  if (scope === 'overdue') {
+    return item.status === 'open' && dueDate < referenceToday;
+  }
+  return true;
+}
 
 const Maintenance: React.FC = () => {
   const queryClient = useQueryClient();
   const { isAdmin } = useAuth();
-  const [filters, setFilters] = useState<{
-    status?: MaintenanceStatus;
-    category?: MaintenanceCategory;
-    vehicle_id?: string;
-    vendor_id?: string;
-    onlyOverdue?: boolean;
-  }>({ status: 'OPEN' });
 
-  const maintenanceQuery = useQuery({
-    queryKey: ['maintenance', filters],
+  const [activeTab, setActiveTab] = useState<TabScope>('upcoming');
+  const [filters, setFilters] = useState<FiltersState>(defaultFilters);
+  const [page, setPage] = useState(1);
+  const [isPaymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<MaintenanceOccurrence | null>(null);
+  const getDefaultPaymentForm = () => ({
+    paidAt: format(new Date(), 'yyyy-MM-dd'),
+    note: '',
+    cashCategoryId: '',
+    paymentMethod: '',
+  });
+  const [paymentForm, setPaymentForm] = useState<PaymentFormState>(getDefaultPaymentForm);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  const { register, handleSubmit, reset, watch } = useForm<SeriesFormValues>({
+    defaultValues: defaultFormValues,
+  });
+
+  const dayRuleMode = watch('day_rule_mode');
+
+  const vehiclesQuery = useQuery({
+    queryKey: ['vehicles', 'maintenance'],
+    queryFn: () => VehiclesApi.list({ page_size: 200 }),
+  });
+
+  const vendorsQuery = useQuery({
+    queryKey: ['vendors', 'maintenance'],
+    queryFn: () => VendorsApi.list({ page_size: 200 }),
+  });
+
+  const cashCategoriesQuery = useQuery({
+    queryKey: ['cash-categories', 'maintenance'],
+    queryFn: () => CashCategoriesApi.list(true),
+  });
+
+  const vehicles = useMemo(() => vehiclesQuery.data?.items ?? [], [vehiclesQuery.data]);
+  const vendors = useMemo(() => vendorsQuery.data?.items ?? [], [vendorsQuery.data]);
+  const cashCategories = cashCategoriesQuery.data ?? [];
+  const cashCategoriesLoading = cashCategoriesQuery.isLoading;
+  const cashCategoriesError = cashCategoriesQuery.isError;
+
+  const today = startOfDay(new Date());
+  const daysWindow = 30;
+
+  const queryKey = ['maintenance-occurrences', activeTab, filters, page] as const;
+
+  const occurrencesQuery = useQuery({
+    queryKey,
+    keepPreviousData: true,
     queryFn: () =>
-      MaintenanceApi.list({
-        page: 1,
-        page_size: 200,
-        status: filters.status,
-        category: filters.category,
-        vehicle_id: filters.vehicle_id,
-        vendor_id: filters.vendor_id,
-        upcoming_until: filters.onlyOverdue ? new Date().toISOString().slice(0, 10) : undefined,
+      MaintenanceApi.listOccurrences({
+        scope: activeTab,
+        days: activeTab === 'upcoming' ? daysWindow : undefined,
+        status: filters.status !== 'all' ? filters.status : undefined,
+        vehicle_id: filters.vehicleId || undefined,
+        supplier_id: filters.supplierId || undefined,
+        category: filters.category || undefined,
+        page,
+        page_size: PAGE_SIZE,
       }),
   });
 
-  const vehiclesQuery = useQuery({ queryKey: ['vehicles', 'maintenance'], queryFn: () => VehiclesApi.list({ page_size: 200 }) });
-  const vendorsQuery = useQuery({ queryKey: ['vendors', 'maintenance'], queryFn: () => VendorsApi.list({ page_size: 200 }) });
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, filters]);
 
-  const { register, handleSubmit, reset, formState } = useForm<MaintenanceForm>({
-    defaultValues: buildDefaultFormValues(),
-  });
+  const updateCacheAfterAction = (data: MaintenanceActionResponse) => {
+    queryClient.setQueryData<MaintenanceOccurrencesResponse>(queryKey, (previous) => {
+      if (!previous) return previous;
+      const updatedItems = previous.items
+        .map((item) => (item.id === data.occurrence.id ? data.occurrence : item))
+        .filter((item) => matchesFilters(item, activeTab, filters, today, daysWindow));
+      const diff = previous.items.length - updatedItems.length;
+      return {
+        ...previous,
+        summary: data.summary,
+        items: updatedItems,
+        total: Math.max(0, previous.total - diff),
+      };
+    });
+    queryClient.invalidateQueries({ queryKey: ['maintenance-occurrences'] });
+  };
 
-  const createTask = useMutation({
-    mutationFn: (payload: Partial<VehicleMaintenanceTask>) => MaintenanceApi.create(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
-      reset(buildDefaultFormValues());
+  const payMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: MaintenancePayRequest }) =>
+      MaintenanceApi.payOccurrence(id, payload),
+    onSuccess: (response) => {
+      updateCacheAfterAction(response);
+      closePaymentDialog();
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : 'Não foi possível registrar o pagamento.';
+      setPaymentError(message);
     },
   });
 
-  const updateTask = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Partial<VehicleMaintenanceTask> }) => MaintenanceApi.update(id, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenance'] }),
+  const ignoreMutation = useMutation({
+    mutationFn: ({ id, note }: { id: number; note?: string }) =>
+      MaintenanceApi.ignoreOccurrence(id, note ? { note } : undefined),
+    onSuccess: (response) => updateCacheAfterAction(response),
   });
 
-  const completeTask = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: MaintenanceStatus }) =>
-      MaintenanceApi.complete(id, {
-        status,
-        completed_at: new Date().toISOString().slice(0, 10),
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenance'] }),
+  const reopenMutation = useMutation({
+    mutationFn: (id: number) => MaintenanceApi.reopenOccurrence(id),
+    onSuccess: (response) => updateCacheAfterAction(response),
   });
 
-  const deleteTask = useMutation({
-    mutationFn: (id: string) => MaintenanceApi.remove(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenance'] }),
+  const createSeriesMutation = useMutation({
+    mutationFn: (payload: Partial<MaintenanceSeries>) => MaintenanceApi.createSeries(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['maintenance-occurrences'] });
+      reset(defaultFormValues);
+    },
   });
 
-  const isSaving = createTask.isPending;
-
-  const tasks = maintenanceQuery.data?.items ?? [];
-  const vehicles = vehiclesQuery.data?.items ?? [];
-
-  const vehiclesById = useMemo(() => {
-    const map = new Map<string, Vehicle>();
-    vehicles.forEach((vehicle) => map.set(vehicle.id, vehicle));
-    return map;
-  }, [vehicles]);
-
-  const vendors = vendorsQuery.data?.items ?? [];
-  const vendorsById = useMemo(() => {
-    const map = new Map<string, Vendor>();
-    vendors.forEach((vendor) => map.set(vendor.id, vendor));
-    return map;
-  }, [vendors]);
-
-  const overdueCount = useMemo(() => {
-    const now = new Date();
-    return tasks.filter((task) => {
-      if (task.status !== 'OPEN' || !task.due_date) {
-        return false;
+  const occurrences = occurrencesQuery.data?.items ?? [];
+  const summary = occurrencesQuery.data?.summary ?? ({
+    open: 0,
+    overdue: 0,
+    expected_this_month: '0',
+    paid_this_month: '0',
+  } as MaintenanceSummary);
+  const total = occurrencesQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  
+  const categoryOptions = useMemo(() => {
+    const unique = new Set<string>();
+    occurrences.forEach((item) => {
+      if (item.category) {
+        unique.add(item.category);
       }
-      const due = parseISO(task.due_date);
-      return isBefore(due, now);
-    }).length;
-  }, [tasks]);
+    });
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [occurrences]);
 
-  const monthlyPlanned = useMemo(() => {
-    const now = new Date();
-    return tasks
-      .filter((task) => task.due_date && task.status === 'OPEN' && parseISO(task.due_date).getMonth() === now.getMonth())
-      .reduce((acc, task) => acc + Number(task.amount ?? 0), 0);
-  }, [tasks]);
+  const isPaying = payMutation.isPending;
+  const isIgnoring = ignoreMutation.isPending;
+  const isReopening = reopenMutation.isPending;
 
-  const completedThisMonth = useMemo(() => {
-    const now = new Date();
-    return tasks
-      .filter((task) => task.completed_at && parseISO(task.completed_at).getMonth() === now.getMonth())
-      .reduce((acc, task) => acc + Number(task.amount ?? 0), 0);
-  }, [tasks]);
-
-  const onSubmit = (data: MaintenanceForm) => {
-    const frequencyValue = data.frequency && data.frequency !== '' ? data.frequency : undefined;
-    const payload: Partial<VehicleMaintenanceTask> = {
-      vehicle_id: data.vehicle_id,
-      title: data.title,
-      category: data.category,
-      frequency: frequencyValue,
-      due_date: data.due_date || undefined,
-      odometer_due: data.odometer_due,
-      amount: data.amount != null ? data.amount.toString() : undefined,
-      notes: data.notes || undefined,
-      vendor_id: data.vendor_id || undefined,
-    };
-    createTask.mutate(payload);
+  const closePaymentDialog = () => {
+    setPaymentDialogOpen(false);
+    setPaymentTarget(null);
+    setPaymentForm(getDefaultPaymentForm());
+    setPaymentError(null);
+    payMutation.reset();
   };
 
-  const handleStatusChange = (task: VehicleMaintenanceTask, status: MaintenanceStatus) => {
-    if (status === 'OPEN') {
-      if (!isAdmin) return;
-      updateTask.mutate({ id: task.id, payload: { status: 'OPEN', completed_at: null } });
+  const handleOpenPaymentDialog = (occurrence: MaintenanceOccurrence) => {
+    setPaymentTarget(occurrence);
+    setPaymentForm({
+      paidAt: occurrence.paid_at ? occurrence.paid_at.slice(0, 10) : format(new Date(), 'yyyy-MM-dd'),
+      note: occurrence.note ?? '',
+      cashCategoryId: occurrence.cash_category_id ?? '',
+      paymentMethod: occurrence.cash_payment_method ?? '',
+    });
+    setPaymentError(null);
+    setPaymentDialogOpen(true);
+  };
+
+  const handlePaymentSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!paymentTarget) {
       return;
     }
-    if (!isAdmin) return;
-    completeTask.mutate({ id: task.id, status });
+    setPaymentError(null);
+    payMutation.mutate({
+      id: paymentTarget.id,
+      payload: {
+        paid_at: paymentForm.paidAt || undefined,
+        note: paymentForm.note.trim() || undefined,
+        cash_category_id: paymentForm.cashCategoryId || undefined,
+        payment_method: paymentForm.paymentMethod.trim() || undefined,
+      },
+    });
   };
 
-  const makeVehicleLabel = (vehicleId: string) => {
-    const vehicle = vehiclesById.get(vehicleId);
-    if (!vehicle) {
-      return vehicleId;
-    }
-    const parts = [vehicle.plate?.toUpperCase(), vehicle.make, vehicle.model].filter(Boolean);
-    return parts.join(' · ') || vehicleId;
+  const handleIgnore = (occurrence: MaintenanceOccurrence) => {
+    const note = window.prompt('Motivo (opcional)')?.trim();
+    ignoreMutation.mutate({ id: occurrence.id, note: note || undefined });
   };
 
-  const vendorLabel = (vendorId?: string, fallbackName?: string) => {
-    if (!vendorId) {
-      return fallbackName ?? '—';
+  const handleReopen = (occurrence: MaintenanceOccurrence) => {
+    const shouldReopen = window.confirm('Reabrir esta ocorrência?');
+    if (!shouldReopen) {
+      return;
     }
-    const vendor = vendorsById.get(vendorId);
-    return vendor?.name ?? fallbackName ?? vendorId;
+    reopenMutation.mutate(occurrence.id);
+  };
+
+  const handleSeriesSubmit = (values: SeriesFormValues) => {
+    if (!values.vehicle_id || !values.title || !values.start_date) {
+      return;
+    }
+    const amountDecimal = values.amount != null ? Number(values.amount) : 0;
+    const dayRule =
+      values.day_rule_mode === 'same_day'
+        ? 'same_day'
+        : `fixed_day:${Math.min(Math.max(values.fixed_day ?? 1, 1), 31)}`;
+
+    createSeriesMutation.mutate({
+      vehicle_id: values.vehicle_id,
+      title: values.title,
+      category: values.category || undefined,
+      supplier_id: values.supplier_id || undefined,
+      frequency: values.frequency,
+      start_date: values.start_date,
+      end_date: values.end_date || undefined,
+      amount: amountDecimal.toFixed(2),
+      status: values.status,
+      day_rule: dayRule,
+    });
+  };
+
+  const handleStatusFilterChange = (value: MaintenanceOccurrenceStatus | 'all') => {
+    setFilters((prev) => ({ ...prev, status: value }));
+  };
+
+  const handleInputChange = (field: keyof FiltersState, value: string) => {
+    setFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const renderSummaryCard = (title: string, value: string, tone?: 'default' | 'warning' | 'positive') => {
+    const toneClasses: Record<string, string> = {
+      default: 'bg-white border-slate-200 text-slate-700',
+      warning: 'bg-amber-50 border-amber-200 text-amber-700',
+      positive: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+    };
+    const toneKey = tone ?? 'default';
+    return (
+      <div className={`rounded-xl border p-4 shadow-sm ${toneClasses[toneKey]}`}>
+        <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
+        <p className="mt-1 text-xl font-semibold">{value}</p>
+      </div>
+    );
+  };
+
+  const renderTable = () => {
+    if (occurrencesQuery.isLoading) {
+      return <Loading label="Carregando manutenções..." />;
+    }
+    if (occurrencesQuery.isError) {
+      return (
+        <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">
+          Não foi possível carregar as ocorrências de manutenção.
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <DataTable<MaintenanceOccurrence>
+          data={occurrences}
+          columns={[
+            {
+              header: 'Veículo',
+              key: 'vehicle_id',
+              render: (item) => <span className="font-medium text-slate-700">{item.vehicle_label}</span>,
+            },
+            { header: 'Título', key: 'title' },
+            {
+              header: 'Categoria',
+              key: 'category',
+              render: (item) => item.category || '—',
+            },
+            {
+              header: 'Fornecedor',
+              key: 'supplier',
+              render: (item) => item.supplier_name || '—',
+            },
+            {
+              header: 'Previsto',
+              key: 'due_date',
+              render: (item) => (item.due_date ? format(parseISO(item.due_date), 'dd/MM/yyyy') : '—'),
+            },
+            {
+              header: 'Pago em',
+              key: 'paid_at',
+              render: (item) => (item.paid_at ? format(parseISO(item.paid_at), 'dd/MM/yyyy') : '—'),
+            },
+            {
+              header: 'Frequência',
+              key: 'frequency',
+              render: (item) => FREQUENCY_LABELS[item.frequency],
+            },
+            {
+              header: 'Valor',
+              key: 'amount',
+              render: (item) => formatCurrency(item.amount),
+            },
+            {
+              header: 'Status',
+              key: 'status',
+              render: (item) => (
+                <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${STATUS_TONES[item.status]}`}>
+                  {STATUS_LABELS[item.status]}
+                </span>
+              ),
+            },
+            {
+              header: 'Observação',
+              key: 'note',
+              render: (item) => {
+                if (!item.note && !item.cash_txn_id) {
+                  return '—';
+                }
+                return (
+                  <div className="flex flex-col gap-1">
+                    {item.note ? <span>{item.note}</span> : null}
+                    {item.cash_txn_id ? (
+                      <span className="text-[11px] text-slate-500">Caixa: {item.cash_txn_id}</span>
+                    ) : null}
+                  </div>
+                );
+              },
+            },
+            {
+              header: 'Ações',
+              key: 'actions',
+              render: (item) => (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {isAdmin && (item.status === 'open' || item.status === 'paid') ? (
+                    <button
+                      className="rounded-md border border-emerald-300 px-2 py-1 text-emerald-600 transition hover:bg-emerald-50"
+                      onClick={() => handleOpenPaymentDialog(item)}
+                      disabled={isPaying}
+                    >
+                      {item.status === 'open' ? 'Registrar pagamento' : 'Editar pagamento'}
+                    </button>
+                  ) : null}
+                  {isAdmin && item.status === 'open' ? (
+                    <button
+                      className="rounded-md border border-amber-200 px-2 py-1 text-amber-600 transition hover:bg-amber-50"
+                      onClick={() => handleIgnore(item)}
+                      disabled={isIgnoring}
+                    >
+                      Ignorar
+                    </button>
+                  ) : null}
+                  {isAdmin && (item.status === 'paid' || item.status === 'ignored') ? (
+                    <button
+                      className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 transition hover:bg-slate-100"
+                      onClick={() => handleReopen(item)}
+                      disabled={isReopening}
+                    >
+                      Reabrir
+                    </button>
+                  ) : null}
+                </div>
+              ),
+            },
+          ]}
+        />
+
+        <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+          <span>
+            Página {page} de {totalPages} • {total} registros
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-slate-200 px-2 py-1 transition hover:bg-slate-100 disabled:opacity-60"
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page === 1 || occurrencesQuery.isFetching}
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-slate-200 px-2 py-1 transition hover:bg-slate-100 disabled:opacity-60"
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page >= totalPages || occurrencesQuery.isFetching}
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      </>
+    );
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
-        title="Manutenções e recorrências"
-        description="Cadastre despesas recorrentes (seguro, rastreador, revisões) e deixe o sistema gerar os próximos vencimentos automaticamente."
+        title="Manutenções recorrentes"
+        description="Cadastre séries de manutenção e acompanhe as próximas parcelas geradas sob demanda conforme o horizonte configurado."
       />
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-700">Visão rápida</h2>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Tarefas abertas</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-800">{tasks.filter((task) => task.status === 'OPEN').length}</p>
-          </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-            <p className="text-xs uppercase tracking-wide text-amber-600">Atrasadas</p>
-            <p className="mt-1 text-2xl font-semibold text-amber-700">{overdueCount}</p>
-          </div>
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-            <p className="text-xs uppercase tracking-wide text-emerald-600">Previsto este mês</p>
-            <p className="mt-1 text-lg font-semibold text-emerald-700">{formatCurrency(monthlyPlanned)}</p>
-            <p className="text-xs text-emerald-600">Já pago: {formatCurrency(completedThisMonth)}</p>
-          </div>
-        </div>
+      <section className="grid gap-4 md:grid-cols-4">
+        {renderSummaryCard('Ocorrências abertas', summary.open.toString(), summary.open ? 'warning' : undefined)}
+        {renderSummaryCard('Vencidas', summary.overdue.toString(), summary.overdue ? 'warning' : undefined)}
+        {renderSummaryCard('Previsto este mês', formatCurrency(summary.expected_this_month), 'positive')}
+        {renderSummaryCard('Pago este mês', formatCurrency(summary.paid_this_month))}
       </section>
 
       {isAdmin ? (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-700">Nova recorrência / manutenção</h2>
+            <div>
+              <h2 className="text-base font-semibold text-slate-700">Nova série de manutenção</h2>
+              <p className="text-xs text-slate-500">Defina a recorrência e o sistema gerará as próximas parcelas conforme o horizonte.</p>
+            </div>
             <button
               type="button"
-              onClick={() => reset(buildDefaultFormValues())}
+              onClick={() => reset(defaultFormValues)}
               className="text-xs font-semibold uppercase tracking-wide text-slate-500"
             >
-              Limpar formulário
+              Limpar
             </button>
           </div>
-          <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit(onSubmit)}>
+          <form className="grid gap-4 md:grid-cols-3" onSubmit={handleSubmit(handleSeriesSubmit)}>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Veículo</label>
-              <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('vehicle_id', { required: true })}>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Veículo</label>
+              <select
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                {...register('vehicle_id', { required: true })}
+              >
                 <option value="">Selecione...</option>
                 {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>
-                  {makeVehicleLabel(vehicle.id)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Título</label>
-            <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('title', { required: true })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria</label>
-            <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('category', { required: true })}>
-              {CATEGORY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Frequência</label>
-            <select
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
-              {...register('frequency', {
-                setValueAs: (value) => (value ? (value as MaintenanceFrequency) : undefined),
-              })}
-            >
-              <option value="">Sob demanda</option>
-              {FREQUENCY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Data prevista</label>
-            <input type="date" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('due_date')} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">KM prevista</label>
-            <input type="number" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('odometer_due', { valueAsNumber: true })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Valor estimado (R$)</label>
-            <input type="number" step="0.01" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('amount', { valueAsNumber: true })} />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Fornecedor</label>
-            <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('vendor_id')}>
-              <option value="">Selecione...</option>
-              {vendors.map((vendor) => (
-                <option key={vendor.id} value={vendor.id}>
-                  {vendor.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Notas</label>
-            <textarea className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" rows={2} {...register('notes')} />
-          </div>
-          <div className="md:col-span-3 flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-70"
-            >
-              {isSaving ? 'Salvando...' : 'Registrar manutenção'}
-            </button>
-            {formState.errors.vehicle_id ? (
-              <span className="text-xs text-red-600">Selecione um veículo.</span>
-            ) : null}
-            {createTask.isError ? (
-              <span className="text-xs text-red-600">{String(createTask.error)}</span>
-            ) : null}
-            {createTask.isSuccess ? <span className="text-xs text-emerald-600">Manutenção registrada!</span> : null}
-          </div>
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {makeVehicleLabel(vehicle)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Título</label>
+              <input
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                {...register('title', { required: true })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Categoria</label>
+              <input
+                list="maintenance-categories"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                {...register('category')}
+              />
+              <datalist id="maintenance-categories">
+                {categoryOptions.map((category) => (
+                  <option key={category} value={category} />
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fornecedor</label>
+              <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('supplier_id')}>
+                <option value="">Selecione...</option>
+                {vendors.map((vendor) => (
+                  <option key={vendor.id} value={vendor.id}>
+                    {vendor.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Frequência</label>
+              <select
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                {...register('frequency')}
+              >
+                {FREQUENCY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Início</label>
+              <input
+                type="date"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                {...register('start_date', { required: true })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Término (opcional)</label>
+              <input type="date" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('end_date')} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                {...register('amount', { valueAsNumber: true, min: 0 })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
+              <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" {...register('status')}>
+                {SERIES_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Regra do dia</label>
+              <div className="mt-1 flex gap-2">
+                <select
+                  className="w-1/2 rounded-md border border-slate-300 px-3 py-2"
+                  {...register('day_rule_mode')}
+                >
+                  <option value="same_day">Mesmo dia da data inicial</option>
+                  <option value="fixed_day">Dia fixo</option>
+                </select>
+                {dayRuleMode === 'fixed_day' ? (
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    className="w-1/2 rounded-md border border-slate-300 px-3 py-2"
+                    placeholder="Dia"
+                    {...register('fixed_day', { valueAsNumber: true })}
+                  />
+                ) : null}
+              </div>
+            </div>
+            <div className="md:col-span-3 flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={createSeriesMutation.isPending}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:opacity-70"
+              >
+                {createSeriesMutation.isPending ? 'Salvando...' : 'Criar série'}
+              </button>
+              {createSeriesMutation.isSuccess ? (
+                <span className="text-xs text-emerald-600">Série criada com sucesso.</span>
+              ) : null}
+              {createSeriesMutation.isError ? (
+                <span className="text-xs text-red-600">Erro ao salvar série.</span>
+              ) : null}
+            </div>
           </form>
         </section>
       ) : null}
@@ -351,53 +717,41 @@ const Maintenance: React.FC = () => {
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-700">Planilha de manutenção</h2>
-            <p className="text-xs text-slate-500">Filtre por status, veículo ou categoria para acompanhar os gastos contínuos.</p>
+            <h2 className="text-base font-semibold text-slate-700">Ocorrências geradas</h2>
+            <p className="text-xs text-slate-500">
+              As ocorrências são calculadas sob demanda. Altere os filtros para refinar a visão.
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <select
               className="rounded-md border border-slate-300 px-2 py-1"
-              value={filters.status ?? ''}
-              onChange={(event) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  status: event.target.value ? (event.target.value as MaintenanceStatus) : undefined,
-                }))
-              }
+              value={filters.status}
+              onChange={(event) => handleStatusFilterChange(event.target.value as MaintenanceOccurrenceStatus | 'all')}
             >
-              <option value="">Todos os status</option>
-              <option value="OPEN">Abertos</option>
-              <option value="COMPLETED">Concluídos</option>
-              <option value="SKIPPED">Ignorados</option>
-            </select>
-            <select
-              className="rounded-md border border-slate-300 px-2 py-1"
-              value={filters.category ?? ''}
-              onChange={(event) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  category: event.target.value ? (event.target.value as MaintenanceCategory) : undefined,
-                }))
-              }
-            >
-              <option value="">Todas as categorias</option>
-              {CATEGORY_OPTIONS.map((option) => (
+              {OCCURRENCE_STATUS_FILTERS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
+            <input
+              list="maintenance-filter-categories"
+              className="rounded-md border border-slate-300 px-2 py-1"
+              placeholder="Categoria"
+              value={filters.category}
+              onChange={(event) => handleInputChange('category', event.target.value)}
+            />
+            <datalist id="maintenance-filter-categories">
+              {categoryOptions.map((category) => (
+                <option key={category} value={category} />
+              ))}
+            </datalist>
             <select
               className="rounded-md border border-slate-300 px-2 py-1"
-              value={filters.vendor_id ?? ''}
-              onChange={(event) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  vendor_id: event.target.value || undefined,
-                }))
-              }
+              value={filters.supplierId}
+              onChange={(event) => handleInputChange('supplierId', event.target.value)}
             >
-              <option value="">Todos os fornecedores</option>
+              <option value="">Fornecedor</option>
               {vendors.map((vendor) => (
                 <option key={vendor.id} value={vendor.id}>
                   {vendor.name}
@@ -406,143 +760,156 @@ const Maintenance: React.FC = () => {
             </select>
             <select
               className="rounded-md border border-slate-300 px-2 py-1"
-              value={filters.vehicle_id ?? ''}
-              onChange={(event) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  vehicle_id: event.target.value || undefined,
-                }))
-              }
+              value={filters.vehicleId}
+              onChange={(event) => handleInputChange('vehicleId', event.target.value)}
             >
-              <option value="">Todos os veículos</option>
+              <option value="">Veículo</option>
               {vehicles.map((vehicle) => (
                 <option key={vehicle.id} value={vehicle.id}>
-                  {makeVehicleLabel(vehicle.id)}
+                  {makeVehicleLabel(vehicle)}
                 </option>
               ))}
             </select>
-            <label className="inline-flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={Boolean(filters.onlyOverdue)}
-                onChange={(event) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    onlyOverdue: event.target.checked || undefined,
-                  }))
-                }
-              />
-              <span>Somente vencidos</span>
-            </label>
           </div>
         </div>
 
-        {maintenanceQuery.isLoading ? (
-          <Loading label="Carregando manutenções..." />
-        ) : maintenanceQuery.isError ? (
-          <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">Erro ao carregar manutenções.</div>
-        ) : (
-          <>
-            <p className="mb-3 text-xs text-slate-500">
-              O sistema mantém cada série recorrente com até 12 meses de antecedência. Ao registrar o pagamento, a próxima parcela é criada automaticamente.
-            </p>
-          <DataTable<VehicleMaintenanceTask>
-            data={tasks}
-            columns={[
-              { header: 'ID', key: 'id' },
-              {
-                header: 'Veículo',
-                key: 'vehicle_id',
-                render: (item) => makeVehicleLabel(item.vehicle_id),
-              },
-              { header: 'Título', key: 'title' },
-              {
-                header: 'Categoria',
-                key: 'category',
-                render: (item) => CATEGORY_OPTIONS.find((option) => option.value === item.category)?.label ?? item.category,
-              },
-              {
-                header: 'Fornecedor',
-                key: 'vendor',
-                render: (item) => vendorLabel(item.vendor_id, item.vendor_name),
-              },
-              {
-                header: 'Previsto',
-                key: 'due_date',
-                render: (item) =>
-                  item.due_date ? format(parseISO(item.due_date), 'dd/MM/yyyy') : item.odometer_due ? `${item.odometer_due} km` : '—',
-              },
-              {
-                header: 'Frequência',
-                key: 'frequency',
-                render: (item) =>
-                  item.frequency
-                    ? FREQUENCY_OPTIONS.find((option) => option.value === item.frequency)?.label ?? item.frequency
-                    : 'Sob demanda',
-              },
-              {
-                header: 'Valor',
-                key: 'amount',
-                render: (item) => formatCurrency(item.amount),
-              },
-              {
-                header: 'Status',
-                key: 'status',
-                render: (item) => (
-                  <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${STATUS_TONE[item.status]}`}>
-                    {STATUS_LABEL[item.status]}
-                  </span>
-                ),
-              },
-              {
-                header: 'Ações',
-                key: 'actions',
-                render: (item) => (
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {isAdmin && item.status !== 'COMPLETED' ? (
-                      <button
-                        className="rounded-md border border-emerald-300 px-2 py-1 text-emerald-600 hover:bg-emerald-50"
-                        onClick={() => handleStatusChange(item, 'COMPLETED')}
-                      >
-                        Registrar pagamento
-                      </button>
-                    ) : null}
-                    {isAdmin && item.status === 'COMPLETED' ? (
-                      <button
-                        className="rounded-md border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100"
-                        onClick={() => handleStatusChange(item, 'OPEN')}
-                      >
-                        Reabrir
-                      </button>
-                    ) : null}
-                    {isAdmin && item.status === 'OPEN' ? (
-                      <button
-                        className="rounded-md border border-amber-200 px-2 py-1 text-amber-600 hover:bg-amber-50"
-                        onClick={() => handleStatusChange(item, 'SKIPPED')}
-                      >
-                        Ignorar
-                      </button>
-                    ) : null}
-                    {isAdmin ? (
-                      <button
-                      className="rounded-md border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50"
-                      onClick={() => {
-                        if (confirm('Remover manutenção?')) {
-                          deleteTask.mutate(item.id);
-                        }
-                      }}
-                    >
-                      Excluir
-                    </button>
-                    ) : null}
-                  </div>
-                ),
-              },
-            ]}
-          />
-          </>
-        )}
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabScope)}>
+          <TabsList>
+            {TAB_CONFIG.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="mt-4 space-y-4">
+            {TAB_CONFIG.map((tab) => (
+              <TabsContent key={tab.value} value={tab.value}>
+                {renderTable()}
+              </TabsContent>
+            ))}
+          </div>
+        </Tabs>
       </section>
+
+      {isPaymentDialogOpen && paymentTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          onClick={() => {
+            if (!isPaying) {
+              closePaymentDialog();
+            }
+          }}
+        >
+          <div className="absolute inset-0 bg-slate-950/40" />
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-slate-800">
+              {paymentTarget.status === 'open' ? 'Registrar pagamento' : 'Editar pagamento'}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Valor previsto: {formatCurrency(paymentTarget.amount)}
+            </p>
+
+            {paymentError ? (
+              <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                {paymentError}
+              </div>
+            ) : null}
+
+            <form className="mt-4 space-y-4" onSubmit={handlePaymentSubmit}>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Pago em
+                </label>
+                <input
+                  type="date"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2"
+                  value={paymentForm.paidAt}
+                  onChange={(event) =>
+                    setPaymentForm((prev) => ({ ...prev, paidAt: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Categoria de caixa
+                </label>
+                <select
+                  className="w-full rounded-md border border-slate-300 px-3 py-2"
+                  value={paymentForm.cashCategoryId}
+                  onChange={(event) =>
+                    setPaymentForm((prev) => ({ ...prev, cashCategoryId: event.target.value }))
+                  }
+                  disabled={cashCategoriesLoading}
+                >
+                  <option value="">Não registrar saída</option>
+                  {cashCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                {cashCategoriesLoading ? (
+                  <p className="text-[11px] text-slate-500">Carregando categorias...</p>
+                ) : null}
+                {cashCategoriesError ? (
+                  <p className="text-[11px] text-red-500">Não foi possível carregar as categorias.</p>
+                ) : null}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Método de pagamento
+                </label>
+                <input
+                  className="w-full rounded-md border border-slate-300 px-3 py-2"
+                  placeholder="Ex.: PIX, Transferência"
+                  value={paymentForm.paymentMethod}
+                  onChange={(event) =>
+                    setPaymentForm((prev) => ({ ...prev, paymentMethod: event.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Observação
+                </label>
+                <textarea
+                  className="w-full rounded-md border border-slate-300 px-3 py-2"
+                  rows={3}
+                  value={paymentForm.note}
+                  onChange={(event) =>
+                    setPaymentForm((prev) => ({ ...prev, note: event.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"
+                  onClick={closePaymentDialog}
+                  disabled={isPaying}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-60"
+                  disabled={isPaying}
+                >
+                  {paymentTarget.status === 'open' ? 'Confirmar pagamento' : 'Atualizar pagamento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

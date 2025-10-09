@@ -25,7 +25,16 @@ from .auth import (
 )
 from .summary import SummaryResponse
 from .document import DocumentRead, DocumentList, DocumentDeleteResponse
-from .maintenance import VehicleMaintenanceCreate, VehicleMaintenanceRead, VehicleMaintenanceUpdate
+from .maintenance import (
+    MaintenanceSeriesCreate,
+    MaintenanceSeriesRead,
+    MaintenanceSeriesUpdate,
+    MaintenanceOccurrenceRead,
+    MaintenanceSummary,
+    MaintenanceOccurrencesResponse,
+    MaintenanceOccurrenceActionResponse,
+    MaintenanceOccurrenceActionRequest,
+)
 from .common import PaginatedResult, PaginationParams
 
 __all__ = [
@@ -74,9 +83,14 @@ __all__ = [
     "DocumentRead",
     "DocumentList",
     "DocumentDeleteResponse",
-    "VehicleMaintenanceCreate",
-    "VehicleMaintenanceRead",
-    "VehicleMaintenanceUpdate",
+    "MaintenanceSeriesCreate",
+    "MaintenanceSeriesRead",
+    "MaintenanceSeriesUpdate",
+    "MaintenanceOccurrenceRead",
+    "MaintenanceSummary",
+    "MaintenanceOccurrencesResponse",
+    "MaintenanceOccurrenceActionResponse",
+    "MaintenanceOccurrenceActionRequest",
     "PaginatedResult",
     "PaginationParams",
 ]

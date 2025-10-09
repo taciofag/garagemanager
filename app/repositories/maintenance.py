@@ -1,205 +1,173 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
-from typing import Optional, Sequence
+from decimal import Decimal
+from typing import Any, Optional
 
-from dateutil.relativedelta import relativedelta
-from sqlalchemy import Select, and_, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import selectinload
 
 from ..models.maintenance import (
-    MaintenanceCategory,
     MaintenanceFrequency,
-    MaintenanceStatus,
-    VehicleMaintenance,
+    MaintenanceOccurrence,
+    MaintenanceOccurrenceStatus,
+    MaintenanceSeries,
+    MaintenanceSeriesStatus,
 )
 from ..models.common import quantize_decimal
 from ..schemas.common import PaginatedResult, PaginationParams
 from .base import BaseRepository
 
 
-class VehicleMaintenanceRepository(BaseRepository[VehicleMaintenance]):
-    model = VehicleMaintenance
-
-    RECURRING_INTERVALS = {
-        MaintenanceFrequency.MONTHLY: relativedelta(months=1),
-        MaintenanceFrequency.QUARTERLY: relativedelta(months=3),
-        MaintenanceFrequency.SEMIANNUAL: relativedelta(months=6),
-        MaintenanceFrequency.ANNUAL: relativedelta(months=12),
-    }
+class MaintenanceSeriesRepository(BaseRepository[MaintenanceSeries]):
+    model = MaintenanceSeries
 
     @classmethod
     def default_order_attr(cls, params: PaginationParams):  # type: ignore[override]
-        return VehicleMaintenance.due_date
+        return MaintenanceSeries.created_at
 
-    async def list_tasks(
+    async def create_series(self, data: dict[str, Any]) -> MaintenanceSeries:
+        payload = data.copy()
+        payload.setdefault("status", MaintenanceSeriesStatus.ACTIVE)
+        payload.setdefault("day_rule", "same_day")
+        if payload.get("amount") is not None:
+            payload["amount"] = quantize_decimal(payload["amount"]) or Decimal("0")
+        series = MaintenanceSeries(**payload)
+        await self.create(series)
+        await self.session.flush()
+        await self.session.refresh(series)
+        await self.session.refresh(series, attribute_names=["vehicle", "supplier"])
+        return series
+
+    async def update_series(self, series: MaintenanceSeries, data: dict[str, Any]) -> MaintenanceSeries:
+        for key, value in data.items():
+            if not hasattr(series, key):
+                continue
+            if key == "amount" and value is not None:
+                setattr(series, key, quantize_decimal(value) or Decimal("0"))
+            else:
+                setattr(series, key, value)
+        await self.session.flush()
+        await self.session.refresh(series)
+        await self.session.refresh(series, attribute_names=["vehicle", "supplier"])
+        return series
+
+    async def list_for_horizon(
+        self,
+        *,
+        vehicle_id: Optional[str] = None,
+        supplier_id: Optional[str] = None,
+        category: Optional[str] = None,
+        include_inactive: bool = False,
+    ) -> list[MaintenanceSeries]:
+        stmt: Select[Any] = select(MaintenanceSeries)
+        filters: list[Any] = []
+        if not include_inactive:
+            filters.append(MaintenanceSeries.status == MaintenanceSeriesStatus.ACTIVE)
+        if vehicle_id:
+            filters.append(MaintenanceSeries.vehicle_id == vehicle_id)
+        if supplier_id:
+            filters.append(MaintenanceSeries.supplier_id == supplier_id)
+        if category:
+            filters.append(MaintenanceSeries.category == category)
+        if filters:
+            stmt = stmt.where(and_(*filters))
+        stmt = stmt.options(
+            selectinload(MaintenanceSeries.vehicle),
+            selectinload(MaintenanceSeries.supplier),
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+
+class MaintenanceOccurrenceRepository(BaseRepository[MaintenanceOccurrence]):
+    model = MaintenanceOccurrence
+
+    @classmethod
+    def default_order_attr(cls, params: PaginationParams):  # type: ignore[override]
+        return MaintenanceOccurrence.due_date
+
+    async def list_occurrences(
         self,
         params: PaginationParams,
         *,
-        status: Optional[MaintenanceStatus] = None,
+        filters: Sequence[Any] | None = None,
+        options: Sequence[Any] | None = None,
+    ) -> PaginatedResult[MaintenanceOccurrence]:
+        return await super().list(params, filters=filters, options=options)
+
+    async def summary(
+        self,
+        *,
         vehicle_id: Optional[str] = None,
-        category: Optional[MaintenanceCategory] = None,
-        upcoming_until: Optional[date] = None,
-        vendor_id: Optional[str] = None,
-    ) -> PaginatedResult[VehicleMaintenance]:
-        filters: list[Select] = []
-        if status:
-            filters.append(VehicleMaintenance.status == status)
+        supplier_id: Optional[str] = None,
+        category: Optional[str] = None,
+        status: Optional[MaintenanceOccurrenceStatus] = None,
+        reference: Optional[date] = None,
+    ) -> dict[str, Decimal | int]:
+        ref_date = reference or date.today()
+        base_filters: list[Any] = []
         if vehicle_id:
-            filters.append(VehicleMaintenance.vehicle_id == vehicle_id)
+            base_filters.append(MaintenanceSeries.vehicle_id == vehicle_id)
+        if supplier_id:
+            base_filters.append(MaintenanceSeries.supplier_id == supplier_id)
         if category:
-            filters.append(VehicleMaintenance.category == category)
-        if vendor_id:
-            filters.append(VehicleMaintenance.vendor_id == vendor_id)
-        if upcoming_until:
-            filters.append(
-                and_(
-                    VehicleMaintenance.due_date.is_not(None),
-                    VehicleMaintenance.due_date <= upcoming_until,
-                )
-            )
-        return await super().list(
-            params,
-            filters=filters,
-            options=[selectinload(VehicleMaintenance.vendor)],
-        )
+            base_filters.append(MaintenanceSeries.category == category)
+        if status:
+            base_filters.append(MaintenanceOccurrence.status == status)
 
-    async def create_task(self, data: dict) -> VehicleMaintenance:
-        payload = data.copy()
-        payload["id"] = payload.get("id") or await self.generate_id("MTN")
-        payload["series_id"] = payload.get("series_id") or payload["id"]
-        if "vendor_id" in payload and not payload["vendor_id"]:
-            payload["vendor_id"] = None
-        if "amount" in payload and payload["amount"] is not None:
-            payload["amount"] = quantize_decimal(payload["amount"]) or 0
-        task = VehicleMaintenance(**payload)
-        await self.create(task)
-        await self.session.flush()
-        await self.session.refresh(task)
-        await self.session.refresh(task, attribute_names=["vendor"])
-        await self._ensure_future_occurrences(task)
-        return task
-
-    async def update_task(self, task: VehicleMaintenance, data: dict) -> VehicleMaintenance:
-        for key, value in data.items():
-            if hasattr(task, key) and value is not None:
-                if key == "amount":
-                    setattr(task, key, quantize_decimal(value) or 0)
-                elif key == "vendor_id" and not value:
-                    setattr(task, key, None)
-                elif key == "completed_at" and value is None:
-                    setattr(task, key, None)
-                else:
-                    setattr(task, key, value)
-        await self.session.flush()
-        await self.session.refresh(task)
-        await self.session.refresh(task, attribute_names=["vendor"])
-        await self._ensure_future_occurrences(task)
-        return task
-
-    async def delete_task(self, task: VehicleMaintenance) -> None:
-        await self.session.delete(task)
-
-    async def complete_task(
-        self,
-        task: VehicleMaintenance,
-        *,
-        completed_at: Optional[date] = None,
-        status: MaintenanceStatus = MaintenanceStatus.COMPLETED,
-    ) -> VehicleMaintenance:
-        task.status = status
-        task.completed_at = completed_at or date.today()
-        await self.session.flush()
-        await self.session.refresh(task)
-        await self.session.refresh(task, attribute_names=["vendor"])
-        await self._ensure_future_occurrences(task)
-        return task
-
-    async def ensure_all_series_future(self, months_ahead: int = 6) -> int:
-        stmt = select(VehicleMaintenance.series_id).distinct()
-        series_ids: Sequence[str] = [row.series_id for row in (await self.session.execute(stmt)).all()]
-        created = 0
-        for series_id in series_ids:
-            seed = await self._get_latest_for_series(series_id)
-            if seed:
-                created += len(await self._ensure_future_occurrences(seed, months_ahead=months_ahead))
-        return created
-
-    async def _ensure_future_occurrences(
-        self,
-        seed: VehicleMaintenance,
-        *,
-        months_ahead: int = 6,
-    ) -> list[VehicleMaintenance]:
-        if not seed.due_date:
-            return []
-        if seed.frequency not in self.RECURRING_INTERVALS:
-            return []
-
-        existing_due_dates = await self._existing_due_dates(seed.series_id)
-        if not existing_due_dates:
-            existing_due_dates = [seed.due_date]
-        last_due = max(existing_due_dates)
-
-        target = max(date.today(), last_due) + relativedelta(months=months_ahead)
-        results: list[VehicleMaintenance] = []
-
-        while True:
-            next_due = self._calculate_next_due(last_due, seed.frequency)
-            if next_due is None or next_due > target:
-                break
-            if next_due in existing_due_dates:
-                last_due = next_due
-                continue
-            payload = {
-                "id": await self.generate_id("MTN"),
-                "series_id": seed.series_id,
-                "vehicle_id": seed.vehicle_id,
-                "title": seed.title,
-                "category": seed.category,
-                "frequency": seed.frequency,
-                "due_date": next_due,
-                "odometer_due": seed.odometer_due,
-                "amount": quantize_decimal(seed.amount) if seed.amount is not None else quantize_decimal(0),
-                "status": MaintenanceStatus.OPEN,
-                "completed_at": None,
-                "notes": seed.notes,
-                "vendor_id": seed.vendor_id,
-            }
-            occurrence = VehicleMaintenance(**payload)
-            await self.create(occurrence)
-            await self.session.flush()
-            await self.session.refresh(occurrence)
-            await self.session.refresh(occurrence, attribute_names=["vendor"])
-            results.append(occurrence)
-            existing_due_dates.append(next_due)
-            last_due = next_due
-
-        return results
-
-    async def _existing_due_dates(self, series_id: str) -> list[date]:
-        stmt = select(VehicleMaintenance.due_date).where(VehicleMaintenance.series_id == series_id)
-        rows = (await self.session.execute(stmt)).all()
-        return [row.due_date for row in rows if row.due_date]
-
-    async def _get_latest_for_series(self, series_id: str) -> Optional[VehicleMaintenance]:
         stmt = (
-            select(VehicleMaintenance)
-            .where(VehicleMaintenance.series_id == series_id)
-            .order_by(VehicleMaintenance.due_date.desc())
-            .limit(1)
-            .options(selectinload(VehicleMaintenance.vendor))
+            select(
+                MaintenanceOccurrence.status,
+                MaintenanceOccurrence.due_date,
+                MaintenanceOccurrence.amount,
+                MaintenanceOccurrence.paid_at,
+            )
+            .join(MaintenanceSeries, MaintenanceSeries.id == MaintenanceOccurrence.series_id)
         )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        if base_filters:
+            stmt = stmt.where(and_(*base_filters))
+        rows = (await self.session.execute(stmt)).all()
 
-    def _calculate_next_due(
-        self, due_date: date, frequency: MaintenanceFrequency
-    ) -> Optional[date]:
-        interval = self.RECURRING_INTERVALS.get(frequency)
-        if not interval:
-            return None
-        return due_date + interval
+        open_total = 0
+        overdue_total = 0
+        expected_this_month = Decimal("0")
+        paid_this_month = Decimal("0")
+        for status_value, due_date_value, amount_value, paid_at_value in rows:
+            status_enum = (
+                status_value
+                if isinstance(status_value, MaintenanceOccurrenceStatus)
+                else MaintenanceOccurrenceStatus(status_value)
+            )
+            amount_decimal = Decimal(amount_value or 0)
+            if status_enum == MaintenanceOccurrenceStatus.OPEN:
+                open_total += 1
+                if due_date_value and due_date_value < ref_date:
+                    overdue_total += 1
+                if (
+                    due_date_value
+                    and due_date_value.year == ref_date.year
+                    and due_date_value.month == ref_date.month
+                ):
+                    expected_this_month += amount_decimal
+            if (
+                status_enum == MaintenanceOccurrenceStatus.PAID
+                and paid_at_value
+                and paid_at_value.year == ref_date.year
+                and paid_at_value.month == ref_date.month
+            ):
+                paid_this_month += amount_decimal
+
+        return {
+            "open": open_total,
+            "overdue": overdue_total,
+            "expected_this_month": quantize_decimal(expected_this_month) or Decimal("0"),
+            "paid_this_month": quantize_decimal(paid_this_month) or Decimal("0"),
+        }
 
 
-__all__ = ["VehicleMaintenanceRepository"]
+__all__ = [
+    "MaintenanceSeriesRepository",
+    "MaintenanceOccurrenceRepository",
+]

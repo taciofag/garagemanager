@@ -1,59 +1,70 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from ..models.maintenance import MaintenanceCategory, MaintenanceFrequency, MaintenanceStatus
-from .common import PaginationParams
+from ..models.maintenance import (
+    MaintenanceFrequency,
+    MaintenanceOccurrenceStatus,
+    MaintenanceSeriesStatus,
+)
 
-
-class MaintenanceFilters(BaseModel):
-    status: Optional[MaintenanceStatus] = None
-    vehicle_id: Optional[str] = Field(default=None, max_length=12)
-    category: Optional[MaintenanceCategory] = None
-    upcoming_until: Optional[date] = None
+DAY_RULE_PATTERN = re.compile(r"^(same_day|fixed_day:(?:[1-9]|[12][0-9]|3[01]))$")
 
 
-class VehicleMaintenanceBase(BaseModel):
+class MaintenanceSeriesBase(BaseModel):
     vehicle_id: str = Field(max_length=12)
     title: str = Field(max_length=120)
-    category: MaintenanceCategory
-    frequency: Optional[MaintenanceFrequency] = None
-    due_date: Optional[date] = None
-    odometer_due: Optional[int] = Field(default=None, ge=0)
+    category: Optional[str] = Field(default=None, max_length=80)
+    supplier_id: Optional[str] = Field(default=None, max_length=12)
+    frequency: MaintenanceFrequency
+    start_date: date
+    end_date: Optional[date] = None
     amount: Decimal = Decimal("0")
-    status: MaintenanceStatus = MaintenanceStatus.OPEN
-    notes: Optional[str] = Field(default=None, max_length=255)
-    vendor_id: Optional[str] = Field(default=None, max_length=12)
+    day_rule: str = Field(default="same_day")
+
+    @model_validator(mode="after")
+    def validate_day_rule(self) -> "MaintenanceSeriesBase":
+        if not DAY_RULE_PATTERN.match(self.day_rule):
+            raise ValueError("day_rule deve ser 'same_day' ou 'fixed_day:<1-31>'")
+        return self
 
 
-class VehicleMaintenanceCreate(VehicleMaintenanceBase):
-    pass
+class MaintenanceSeriesCreate(MaintenanceSeriesBase):
+    status: MaintenanceSeriesStatus = MaintenanceSeriesStatus.ACTIVE
 
 
-class VehicleMaintenanceUpdate(BaseModel):
+class MaintenanceSeriesUpdate(BaseModel):
     title: Optional[str] = Field(default=None, max_length=120)
-    category: Optional[MaintenanceCategory] = None
+    category: Optional[str] = Field(default=None, max_length=80)
+    supplier_id: Optional[str] = Field(default=None, max_length=12)
     frequency: Optional[MaintenanceFrequency] = None
-    due_date: Optional[date] = None
-    odometer_due: Optional[int] = Field(default=None, ge=0)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
     amount: Optional[Decimal] = None
-    status: Optional[MaintenanceStatus] = None
-    notes: Optional[str] = Field(default=None, max_length=255)
-    completed_at: Optional[date] = None
-    vendor_id: Optional[str] = Field(default=None, max_length=12)
+    day_rule: Optional[str] = Field(default=None)
+    status: Optional[MaintenanceSeriesStatus] = None
+
+    @model_validator(mode="after")
+    def validate_day_rule(self) -> "MaintenanceSeriesUpdate":
+        if self.day_rule is not None and not DAY_RULE_PATTERN.match(self.day_rule):
+            raise ValueError("day_rule deve ser 'same_day' ou 'fixed_day:<1-31>'")
+        return self
 
 
-class VehicleMaintenanceRead(VehicleMaintenanceBase):
-    id: str
-    completed_at: Optional[date] = None
+class MaintenanceSeriesRead(MaintenanceSeriesBase):
+    id: int
+    status: MaintenanceSeriesStatus
+    next_due_date: Optional[date] = None
+    last_generated_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-    vendor_name: Optional[str] = None
-    series_id: str
+    vehicle_label: str
+    supplier_name: Optional[str] = None
 
     model_config = {
         "from_attributes": True,
@@ -61,13 +72,73 @@ class VehicleMaintenanceRead(VehicleMaintenanceBase):
     }
 
 
-class MaintenanceListResponse(BaseModel):
+class MaintenanceOccurrenceBase(BaseModel):
+    status: MaintenanceOccurrenceStatus = MaintenanceOccurrenceStatus.OPEN
+    note: Optional[str] = None
+
+
+class MaintenanceOccurrenceRead(BaseModel):
+    id: int
+    series_id: int
+    vehicle_id: str
+    vehicle_label: str
+    title: str
+    category: Optional[str] = None
+    supplier_id: Optional[str] = None
+    supplier_name: Optional[str] = None
+    due_date: date
+    frequency: MaintenanceFrequency
+    amount: Decimal
+    status: MaintenanceOccurrenceStatus
+    paid_at: Optional[datetime] = None
+    note: Optional[str] = None
+    cash_txn_id: Optional[str] = None
+    cash_category_id: Optional[str] = None
+    cash_payment_method: Optional[str] = None
+
+    model_config = {
+        "from_attributes": True,
+        "json_encoders": {Decimal: lambda v: str(v)},
+    }
+
+
+class MaintenanceSummary(BaseModel):
+    open: int
+    overdue: int
+    expected_this_month: Decimal
+    paid_this_month: Decimal
+
+    model_config = {
+        "json_encoders": {Decimal: lambda v: str(v)},
+    }
+
+
+class MaintenanceOccurrencesResponse(BaseModel):
+    summary: MaintenanceSummary
+    items: list[MaintenanceOccurrenceRead]
     total: int
     page: int
     page_size: int
-    items: list[VehicleMaintenanceRead]
 
 
-class MaintenanceListRequest(BaseModel):
-    pagination: PaginationParams
-    filters: Optional[MaintenanceFilters] = None
+class MaintenanceOccurrenceActionResponse(BaseModel):
+    occurrence: MaintenanceOccurrenceRead
+    summary: MaintenanceSummary
+
+
+class MaintenanceOccurrenceActionRequest(BaseModel):
+    paid_at: Optional[date] = None
+    note: Optional[str] = None
+    cash_category_id: Optional[str] = None
+    payment_method: Optional[str] = None
+
+
+__all__ = [
+    "MaintenanceSeriesCreate",
+    "MaintenanceSeriesUpdate",
+    "MaintenanceSeriesRead",
+    "MaintenanceOccurrenceRead",
+    "MaintenanceSummary",
+    "MaintenanceOccurrencesResponse",
+    "MaintenanceOccurrenceActionResponse",
+]

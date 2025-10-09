@@ -38,7 +38,7 @@ const Login: React.FC = () => {
           <img src="/garage.svg" alt="Garage" className="h-12 w-12" />
           <div>
             <h1 className="text-2xl font-semibold text-slate-800">Garage Manager</h1>
-            <p className="text-sm text-slate-500">Acesse com seu usuário admin para continuar.</p>
+            <p className="text-sm text-slate-500">Acesse com seu usuário e senha para continuar.</p>
           </div>
         </div>
         <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>

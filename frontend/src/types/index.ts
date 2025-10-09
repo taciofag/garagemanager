@@ -234,35 +234,80 @@ export interface DocumentItem {
   created_at: string;
 }
 
-export type MaintenanceCategory =
-  | 'Insurance'
-  | 'Tracker'
-  | 'OilChange'
-  | 'Tires'
-  | 'IPVA'
-  | 'Inspection'
-  | 'Service'
-  | 'Other';
+export type MaintenanceFrequency = 'monthly' | 'yearly' | 'weekly' | 'on_demand';
 
-export type MaintenanceFrequency = 'Monthly' | 'Quarterly' | 'Semiannual' | 'Annual' | 'Kilometer' | 'OnDemand';
+export type MaintenanceSeriesStatus = 'active' | 'paused' | 'canceled';
 
-export type MaintenanceStatus = 'OPEN' | 'COMPLETED' | 'SKIPPED';
+export type MaintenanceOccurrenceStatus = 'open' | 'paid' | 'ignored' | 'canceled';
 
-export interface VehicleMaintenanceTask {
-  id: string;
+export interface MaintenanceSeries {
+  id: number;
   vehicle_id: string;
   title: string;
-  category: MaintenanceCategory;
-  frequency?: MaintenanceFrequency;
-  due_date?: string;
-  odometer_due?: number;
+  category?: string;
+  supplier_id?: string;
+  frequency: MaintenanceFrequency;
+  start_date: string;
+  end_date?: string;
   amount: string;
-  status: MaintenanceStatus;
-  completed_at?: string;
-  notes?: string;
-  vendor_id?: string;
-  vendor_name?: string;
+  day_rule: string;
+  status: MaintenanceSeriesStatus;
+  next_due_date?: string;
+  last_generated_at?: string;
   created_at: string;
   updated_at: string;
-  series_id: string;
+  vehicle_label: string;
+  supplier_name?: string;
+}
+
+export interface MaintenanceSummary {
+  open: number;
+  overdue: number;
+  expected_this_month: string;
+  paid_this_month: string;
+}
+
+export interface MaintenanceOccurrence {
+  id: number;
+  series_id: number;
+  vehicle_id: string;
+  vehicle_label: string;
+  title: string;
+  category?: string;
+  supplier_id?: string;
+  supplier_name?: string;
+  due_date: string;
+  frequency: MaintenanceFrequency;
+  amount: string;
+  status: MaintenanceOccurrenceStatus;
+  paid_at?: string;
+  note?: string;
+  cash_txn_id?: string;
+  cash_category_id?: string;
+  cash_payment_method?: string;
+}
+
+export interface MaintenanceOccurrencesResponse {
+  summary: MaintenanceSummary;
+  items: MaintenanceOccurrence[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface MaintenanceActionResponse {
+  occurrence: MaintenanceOccurrence;
+  summary: MaintenanceSummary;
+}
+
+export interface MaintenanceRegenerateResponse {
+  series: MaintenanceSeries;
+  created: number;
+}
+
+export interface MaintenancePayRequest {
+  paid_at?: string;
+  note?: string;
+  cash_category_id?: string;
+  payment_method?: string;
 }

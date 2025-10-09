@@ -12,6 +12,7 @@ from .models.cash import CashTxnType
 from .models.driver import DriverStatus
 from .models.expense import ExpenseCategory
 from .models.rental import BillingDay, RentalStatus
+from .models.maintenance import MaintenanceFrequency, MaintenanceSeries
 from .models.vehicle import Vehicle, VehicleStatus
 from .models.vendor import VendorType
 from .repositories.capital import CapitalRepository
@@ -23,6 +24,7 @@ from .repositories.rent_payment import RentPaymentRepository
 from .repositories.rental import RentalRepository
 from .repositories.vehicle import VehicleRepository
 from .repositories.vendor import VendorRepository
+from .services.maintenance import MaintenanceService
 
 
 async def seed() -> None:
@@ -143,6 +145,21 @@ async def seed() -> None:
             }
         )
 
+        series_exists = await session.scalar(select(func.count()).select_from(MaintenanceSeries))
+        if not series_exists:
+            maintenance_service = MaintenanceService(session)
+            await maintenance_service.create_series(
+                {
+                    "vehicle_id": vehicle1.id,
+                    "title": "Rastreador mensal",
+                    "category": "Rastreador",
+                    "supplier_id": vendor1.id,
+                    "frequency": MaintenanceFrequency.MONTHLY,
+                    "start_date": date.today(),
+                    "amount": Decimal("25"),
+                }
+            )
+
         await expense_repo.create_expense(
             {
                 "id": "EXP-0001",
@@ -248,5 +265,3 @@ async def seed() -> None:
 
 if __name__ == "__main__":
     asyncio.run(seed())
-
-

@@ -1,123 +1,161 @@
 from __future__ import annotations
 
-from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..dependencies import get_pagination_params
-from ..models.maintenance import MaintenanceCategory, MaintenanceStatus
-from ..repositories.maintenance import VehicleMaintenanceRepository
+from ..models.maintenance import MaintenanceOccurrenceStatus
 from ..schemas.common import PaginationParams
-from ..schemas.maintenance import VehicleMaintenanceCreate, VehicleMaintenanceRead, VehicleMaintenanceUpdate
+from ..schemas.maintenance import (
+    MaintenanceOccurrenceActionRequest,
+    MaintenanceOccurrenceActionResponse,
+    MaintenanceOccurrencesResponse,
+    MaintenanceSeriesCreate,
+    MaintenanceSeriesRead,
+    MaintenanceSeriesUpdate,
+)
+from ..services.maintenance import MaintenanceService
 from ..services.security import get_current_active_user, get_current_admin
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
 
-@router.get("", response_model=dict)
-async def list_maintenance_tasks(
-    pagination: PaginationParams = Depends(get_pagination_params),
-    status_filter: Optional[MaintenanceStatus] = Query(default=None, alias="status"),
-    vehicle_id: Optional[str] = Query(default=None),
-    category: Optional[MaintenanceCategory] = Query(default=None),
-    upcoming_until: Optional[date] = Query(default=None),
-    vendor_id: Optional[str] = Query(default=None),
+def _service(session: AsyncSession) -> MaintenanceService:
+    return MaintenanceService(session)
+
+
+@router.post("/series", response_model=MaintenanceSeriesRead, status_code=status.HTTP_201_CREATED)
+async def create_maintenance_series(
+    payload: MaintenanceSeriesCreate,
     session: AsyncSession = Depends(get_db),
-    _: None = Depends(get_current_active_user),
-) -> dict:
-    repo = VehicleMaintenanceRepository(session)
-    result = await repo.list_tasks(
-        pagination,
-        status=status_filter,
-        vehicle_id=vehicle_id,
-        category=category,
-        upcoming_until=upcoming_until,
-        vendor_id=vendor_id,
-    )
-    items = [VehicleMaintenanceRead.model_validate(task) for task in result.items]
+    _: None = Depends(get_current_admin),
+) -> MaintenanceSeriesRead:
+    service = _service(session)
+    series = await service.create_series(payload.model_dump(exclude_none=True))
     await session.commit()
+    await session.refresh(series, attribute_names=["vehicle", "supplier"])
+    return MaintenanceSeriesRead.model_validate(series)
+
+
+@router.patch("/series/{series_id}", response_model=MaintenanceSeriesRead)
+async def update_maintenance_series(
+    series_id: int,
+    payload: MaintenanceSeriesUpdate,
+    session: AsyncSession = Depends(get_db),
+    _: None = Depends(get_current_admin),
+) -> MaintenanceSeriesRead:
+    service = _service(session)
+    try:
+        series = await service.update_series(series_id, payload.model_dump(exclude_none=True))
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(series, attribute_names=["vehicle", "supplier"])
+    return MaintenanceSeriesRead.model_validate(series)
+
+
+@router.post("/series/{series_id}/regenerate", response_model=dict)
+async def regenerate_maintenance_series(
+    series_id: int,
+    session: AsyncSession = Depends(get_db),
+    _: None = Depends(get_current_admin),
+) -> dict:
+    service = _service(session)
+    try:
+        series, created = await service.regenerate_series(series_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(series, attribute_names=["vehicle", "supplier"])
     return {
-        "total": result.total,
-        "page": result.page,
-        "page_size": result.page_size,
-        "items": items,
+        "series": MaintenanceSeriesRead.model_validate(series),
+        "created": created,
     }
 
 
-@router.post("", response_model=VehicleMaintenanceRead, status_code=status.HTTP_201_CREATED)
-async def create_maintenance_task(
-    payload: VehicleMaintenanceCreate,
-    session: AsyncSession = Depends(get_db),
-    _: None = Depends(get_current_admin),
-) -> VehicleMaintenanceRead:
-    repo = VehicleMaintenanceRepository(session)
-    task = await repo.create_task(payload.model_dump(exclude_none=True))
-    await session.commit()
-    return VehicleMaintenanceRead.model_validate(task)
-
-
-@router.get("/{task_id}", response_model=VehicleMaintenanceRead)
-async def get_maintenance_task(
-    task_id: str,
+@router.get("/occurrences", response_model=MaintenanceOccurrencesResponse)
+async def list_maintenance_occurrences(
+    scope: str = Query("upcoming", pattern="^(upcoming|overdue|history)$"),
+    days: int = Query(30, ge=1, le=365),
+    vehicle_id: Optional[str] = Query(default=None),
+    supplier_id: Optional[str] = Query(default=None),
+    category: Optional[str] = Query(default=None),
+    status_filter: Optional[MaintenanceOccurrenceStatus] = Query(default=None, alias="status"),
+    pagination: PaginationParams = Depends(get_pagination_params),
     session: AsyncSession = Depends(get_db),
     _: None = Depends(get_current_active_user),
-) -> VehicleMaintenanceRead:
-    repo = VehicleMaintenanceRepository(session)
-    task = await repo.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Manutenção não encontrada")
-    await session.refresh(task, attribute_names=["vendor"])
+) -> MaintenanceOccurrencesResponse:
+    service = _service(session)
+    try:
+        result = await service.list_occurrences(
+            pagination,
+            scope=scope,
+            days=days,
+            vehicle_id=vehicle_id,
+            supplier_id=supplier_id,
+            category=category,
+            status=status_filter,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
-    return VehicleMaintenanceRead.model_validate(task)
+    return result
 
 
-@router.patch("/{task_id}", response_model=VehicleMaintenanceRead)
-async def update_maintenance_task(
-    task_id: str,
-    payload: VehicleMaintenanceUpdate,
+@router.post("/occurrences/{occurrence_id}/pay", response_model=MaintenanceOccurrenceActionResponse)
+async def pay_maintenance_occurrence(
+    occurrence_id: int,
+    payload: MaintenanceOccurrenceActionRequest | None = None,
     session: AsyncSession = Depends(get_db),
     _: None = Depends(get_current_admin),
-) -> VehicleMaintenanceRead:
-    repo = VehicleMaintenanceRepository(session)
-    task = await repo.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Manutenção não encontrada")
-    updated = await repo.update_task(task, payload.model_dump(exclude_none=True))
+) -> MaintenanceOccurrenceActionResponse:
+    service = _service(session)
+    try:
+        payload_data = payload or MaintenanceOccurrenceActionRequest()
+        result = await service.pay_occurrence(
+            occurrence_id,
+            paid_at=payload_data.paid_at,
+            note=payload_data.note,
+            cash_category_id=payload_data.cash_category_id,
+            payment_method=payload_data.payment_method,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if detail == "Occurrence not found" else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
     await session.commit()
-    return VehicleMaintenanceRead.model_validate(updated)
+    return result
 
 
-@router.post("/{task_id}/complete", response_model=VehicleMaintenanceRead)
-async def complete_maintenance_task(
-    task_id: str,
-    completed_at: Optional[date] = Query(default=None),
-    status_override: Optional[MaintenanceStatus] = Query(default=None, alias="status"),
+@router.post("/occurrences/{occurrence_id}/ignore", response_model=MaintenanceOccurrenceActionResponse)
+async def ignore_maintenance_occurrence(
+    occurrence_id: int,
+    note: Optional[str] = Query(default=None),
     session: AsyncSession = Depends(get_db),
     _: None = Depends(get_current_admin),
-) -> VehicleMaintenanceRead:
-    repo = VehicleMaintenanceRepository(session)
-    task = await repo.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Manutenção não encontrada")
-    target_status = status_override or MaintenanceStatus.COMPLETED
-    updated = await repo.complete_task(task, completed_at=completed_at, status=target_status)
+) -> MaintenanceOccurrenceActionResponse:
+    service = _service(session)
+    try:
+        result = await service.ignore_occurrence(occurrence_id, note=note)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.commit()
-    return VehicleMaintenanceRead.model_validate(updated)
+    return result
 
 
-@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_maintenance_task(
-    task_id: str,
+@router.post("/occurrences/{occurrence_id}/reopen", response_model=MaintenanceOccurrenceActionResponse)
+async def reopen_maintenance_occurrence(
+    occurrence_id: int,
     session: AsyncSession = Depends(get_db),
     _: None = Depends(get_current_admin),
-) -> Response:
-    repo = VehicleMaintenanceRepository(session)
-    task = await repo.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Manutenção não encontrada")
-    await repo.delete_task(task)
+) -> MaintenanceOccurrenceActionResponse:
+    service = _service(session)
+    try:
+        result = await service.reopen_occurrence(occurrence_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return result

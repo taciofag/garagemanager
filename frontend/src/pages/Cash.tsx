@@ -36,7 +36,10 @@ const buildDefaultValues = (): CashForm => ({
 const Cash: React.FC = () => {
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
-  const cashQuery = useQuery({ queryKey: ['cash'], queryFn: () => CashApi.list() });
+  const cashQuery = useQuery({
+    queryKey: ['cash'],
+    queryFn: () => CashApi.list({ order_by: 'date', order_dir: 'desc', page_size: 200 }),
+  });
   const vehiclesQuery = useQuery({ queryKey: ['vehicles', 'cash'], queryFn: () => VehiclesApi.list({ page_size: 100 }) });
   const rentalsQuery = useQuery({ queryKey: ['rentals', 'cash'], queryFn: () => RentalsApi.list({ page_size: 100 }) });
   const categoriesQuery = useQuery({ queryKey: ['cash-categories'], queryFn: () => CashCategoriesApi.list() });

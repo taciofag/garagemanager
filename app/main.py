@@ -8,7 +8,7 @@ from sqlalchemy.exc import DBAPIError
 from .config import settings
 from .db import AsyncSessionLocal, dispose_engine, warm_db
 from .repositories.user import UserRepository
-from .repositories.maintenance import VehicleMaintenanceRepository
+from .services.maintenance import MaintenanceService
 from .routers import (
     auth,
     billing,
@@ -86,10 +86,9 @@ async def startup() -> None:
                     continue
                 raise
 
-        maintenance_repo = VehicleMaintenanceRepository(session)
-        created = await maintenance_repo.ensure_all_series_future(months_ahead=12)
-        if created:
-            await session.commit()
+        maintenance_service = MaintenanceService(session)
+        await maintenance_service.ensure_for_filters()
+        await session.commit()
 
 
 @app.on_event("shutdown")

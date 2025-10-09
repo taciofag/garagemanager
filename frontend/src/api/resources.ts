@@ -15,7 +15,11 @@ import {
   Vehicle,
   DocumentItem,
   VehicleFinancialSummary,
-  VehicleMaintenanceTask,
+  MaintenanceOccurrencesResponse,
+  MaintenanceActionResponse,
+  MaintenanceSeries,
+  MaintenanceRegenerateResponse,
+  MaintenancePayRequest,
 } from '../types';
 
 export const VehiclesApi = {
@@ -129,15 +133,20 @@ export const SummaryApi = {
 };
 
 export const MaintenanceApi = {
-  list: async (params: Record<string, unknown> = {}) =>
-    (await api.get<PaginatedResponse<VehicleMaintenanceTask>>('/maintenance', { params })).data,
-  create: async (payload: Partial<VehicleMaintenanceTask>) =>
-    (await api.post<VehicleMaintenanceTask>('/maintenance', payload)).data,
-  update: async (id: string, payload: Partial<VehicleMaintenanceTask>) =>
-    (await api.patch<VehicleMaintenanceTask>(`/maintenance/${id}`, payload)).data,
-  complete: async (id: string, params?: { completed_at?: string; status?: 'COMPLETED' | 'SKIPPED' }) =>
-    (await api.post<VehicleMaintenanceTask>(`/maintenance/${id}/complete`, {}, { params })).data,
-  remove: async (id: string) => api.delete(`/maintenance/${id}`),
+  listOccurrences: async (params: Record<string, unknown> = {}) =>
+    (await api.get<MaintenanceOccurrencesResponse>('/maintenance/occurrences', { params })).data,
+  createSeries: async (payload: Partial<MaintenanceSeries>) =>
+    (await api.post<MaintenanceSeries>('/maintenance/series', payload)).data,
+  updateSeries: async (id: number, payload: Partial<MaintenanceSeries>) =>
+    (await api.patch<MaintenanceSeries>(`/maintenance/series/${id}`, payload)).data,
+  regenerateSeries: async (id: number) =>
+    (await api.post<MaintenanceRegenerateResponse>(`/maintenance/series/${id}/regenerate`)).data,
+  payOccurrence: async (id: number, payload: MaintenancePayRequest = {}) =>
+    (await api.post<MaintenanceActionResponse>(`/maintenance/occurrences/${id}/pay`, payload)).data,
+  ignoreOccurrence: async (id: number, params?: { note?: string }) =>
+    (await api.post<MaintenanceActionResponse>(`/maintenance/occurrences/${id}/ignore`, null, { params })).data,
+  reopenOccurrence: async (id: number) =>
+    (await api.post<MaintenanceActionResponse>(`/maintenance/occurrences/${id}/reopen`)).data,
 };
 
 export const DocumentsApi = {

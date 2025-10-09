@@ -1,6 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import axios from 'axios';
-
 import { api, setUnauthorizedHandler } from '../api/client';
 import { AuthApi } from '../api/resources';
 import type { User } from '../types';
@@ -117,13 +115,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     params.append('password', password);
 
     try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL ?? '/api'}/auth/login`,
-        params,
-        {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        }
-      );
+      const response = await api.post('/auth/login', params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
       const accessToken = response.data.access_token as string;
       api.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
       localStorage.setItem(STORAGE_KEY, accessToken);

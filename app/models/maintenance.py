@@ -1,94 +1,155 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Date, Enum as SQLEnum, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
-from decimal import Decimal
-
+from .cash import CashTxn
 from .common import TimestampMixin, quantize_decimal
 
 
-class MaintenanceCategory(str, Enum):
-    INSURANCE = "INSURANCE"
-    TRACKER = "TRACKER"
-    OIL_CHANGE = "OIL_CHANGE"
-    TIRES = "TIRES"
-    IPVA = "IPVA"
-    INSPECTION = "INSPECTION"
-    SERVICE = "SERVICE"
-    OTHER = "OTHER"
-
-
 class MaintenanceFrequency(str, Enum):
-    MONTHLY = "MONTHLY"
-    QUARTERLY = "QUARTERLY"
-    SEMIANNUAL = "SEMIANNUAL"
-    ANNUAL = "ANNUAL"
-    KILOMETER = "KILOMETER"
-    ON_DEMAND = "ON_DEMAND"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+    WEEKLY = "weekly"
+    ON_DEMAND = "on_demand"
 
 
-class MaintenanceStatus(str, Enum):
-    OPEN = "OPEN"
-    COMPLETED = "COMPLETED"
-    SKIPPED = "SKIPPED"
+class MaintenanceSeriesStatus(str, Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    CANCELED = "canceled"
 
 
-class VehicleMaintenance(TimestampMixin, Base):
-    __tablename__ = "vehicle_maintenance"
+class MaintenanceOccurrenceStatus(str, Enum):
+    OPEN = "open"
+    PAID = "paid"
+    IGNORED = "ignored"
+    CANCELED = "canceled"
 
-    id: Mapped[str] = mapped_column(String(12), primary_key=True)
-    series_id: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+
+def _enum_values(enum_cls: type[Enum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
+class MaintenanceSeries(TimestampMixin, Base):
+    __tablename__ = "maintenance_series"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     vehicle_id: Mapped[str] = mapped_column(
         ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String(120), nullable=False)
-    category: Mapped[MaintenanceCategory] = mapped_column(
-        SQLEnum(MaintenanceCategory, name="maintenance_category"), nullable=False
+    category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    supplier_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    frequency: Mapped[Optional[MaintenanceFrequency]] = mapped_column(
-        SQLEnum(MaintenanceFrequency, name="maintenance_frequency"), nullable=True
+    frequency: Mapped[MaintenanceFrequency] = mapped_column(
+        SQLEnum(
+            MaintenanceFrequency,
+            name="maintenance_frequency_v2",
+            values_callable=_enum_values,
+            validate_strings=True,
+        ),
+        nullable=False,
     )
-    due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    odometer_due: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
-    status: Mapped[MaintenanceStatus] = mapped_column(
-        SQLEnum(MaintenanceStatus, name="maintenance_status"), nullable=False, default=MaintenanceStatus.OPEN
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
+    day_rule: Mapped[str] = mapped_column(String(20), nullable=False, default="same_day")
+    status: Mapped[MaintenanceSeriesStatus] = mapped_column(
+        SQLEnum(
+            MaintenanceSeriesStatus,
+            name="maintenance_series_status",
+            values_callable=_enum_values,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=MaintenanceSeriesStatus.ACTIVE,
     )
-    completed_at: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    notes: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    vendor_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True
+    next_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
+    last_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    vehicle = relationship("Vehicle", back_populates="maintenance_series")
+    supplier = relationship("Vendor", lazy="joined")
+    occurrences = relationship(
+        "MaintenanceOccurrence",
+        back_populates="series",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
-    vehicle = relationship("Vehicle", back_populates="maintenance_items", lazy="joined")
-    vendor = relationship("Vendor", lazy="joined")
-
-    __table_args__ = (
-        Index("ix_vehicle_maintenance_status", "status"),
-        Index("ix_vehicle_maintenance_due_date", "due_date"),
-    )
-
-    @property
-    def amount_decimal(self) -> Decimal:
+    def normalized_amount(self) -> Decimal:
         return quantize_decimal(self.amount) or Decimal("0")
 
     @property
-    def vendor_name(self) -> Optional[str]:
-        vendor = getattr(self, "vendor", None)
-        if vendor is None:
-            return None
-        return getattr(vendor, "name", None)
+    def vehicle_label(self) -> str:
+        vehicle = getattr(self, "vehicle", None)
+        if not vehicle:
+            return self.vehicle_id
+        parts = [vehicle.plate and vehicle.plate.upper(), vehicle.make, vehicle.model]
+        return " · ".join([part for part in parts if part]) or self.vehicle_id
+
+
+class MaintenanceOccurrence(TimestampMixin, Base):
+    __tablename__ = "maintenance_occurrence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    series_id: Mapped[int] = mapped_column(
+        ForeignKey("maintenance_series.id", ondelete="CASCADE"), nullable=False
+    )
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    status: Mapped[MaintenanceOccurrenceStatus] = mapped_column(
+        SQLEnum(
+            MaintenanceOccurrenceStatus,
+            name="maintenance_occurrence_status",
+            values_callable=_enum_values,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=MaintenanceOccurrenceStatus.OPEN,
+        index=True,
+    )
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cash_txn_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("cash_txns.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    series = relationship("MaintenanceSeries", back_populates="occurrences")
+    cash_txn = relationship("CashTxn")
+
+    __table_args__ = (
+        UniqueConstraint("series_id", "due_date", name="uq_occurrence_series_due_date"),
+        Index("ix_occurrence_due_date", "due_date"),
+        Index("ix_occurrence_status_due", "status", "due_date"),
+    )
+
+    def normalized_amount(self) -> Decimal:
+        return quantize_decimal(self.amount) or Decimal("0")
 
 
 __all__ = [
-    "VehicleMaintenance",
-    "MaintenanceCategory",
+    "MaintenanceSeries",
+    "MaintenanceOccurrence",
     "MaintenanceFrequency",
-    "MaintenanceStatus",
+    "MaintenanceSeriesStatus",
+    "MaintenanceOccurrenceStatus",
 ]

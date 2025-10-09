@@ -10,7 +10,7 @@ from .cash import CashRepository
 from .cash_category import CashCategoryRepository
 from .user import UserRepository
 from .document import DocumentRepository
-from .maintenance import VehicleMaintenanceRepository
+from .maintenance import MaintenanceSeriesRepository, MaintenanceOccurrenceRepository
 
 __all__ = [
     "VehicleRepository",
@@ -25,5 +25,6 @@ __all__ = [
     "CashCategoryRepository",
     "UserRepository",
     "DocumentRepository",
-    "VehicleMaintenanceRepository",
+    "MaintenanceSeriesRepository",
+    "MaintenanceOccurrenceRepository",
 ]

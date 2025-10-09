@@ -9,7 +9,13 @@ from .partner import Partner
 from .cash import CashCategory, CashTxn
 from .user import User
 from .document import Document
-from .maintenance import VehicleMaintenance, MaintenanceCategory, MaintenanceFrequency, MaintenanceStatus
+from .maintenance import (
+    MaintenanceOccurrence,
+    MaintenanceOccurrenceStatus,
+    MaintenanceSeries,
+    MaintenanceSeriesStatus,
+    MaintenanceFrequency,
+)
 
 __all__ = [
     "Vehicle",
@@ -24,8 +30,9 @@ __all__ = [
     "CashTxn",
     "User",
     "Document",
-    "VehicleMaintenance",
-    "MaintenanceCategory",
+    "MaintenanceSeries",
+    "MaintenanceOccurrence",
     "MaintenanceFrequency",
-    "MaintenanceStatus",
+    "MaintenanceSeriesStatus",
+    "MaintenanceOccurrenceStatus",
 ]

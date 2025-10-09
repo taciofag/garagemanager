@@ -12,7 +12,10 @@ from ..models.capital import CapitalEntry, CapitalType
 from ..models.cash import CashTxn, CashTxnType
 from ..models.common import quantize_decimal
 from ..models.expense import Expense, ExpenseCategory
-from ..models.maintenance import MaintenanceStatus, VehicleMaintenance
+from ..models.maintenance import (
+    MaintenanceOccurrence,
+    MaintenanceOccurrenceStatus,
+)
 from ..models.rent_payment import RentPayment
 from ..models.vehicle import Vehicle, VehicleStatus
 from ..schemas.summary import (
@@ -293,15 +296,23 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
 
     maintenance_rows = (
         await session.execute(
-            select(VehicleMaintenance.status, VehicleMaintenance.due_date, VehicleMaintenance.amount)
+            select(
+                MaintenanceOccurrence.status,
+                MaintenanceOccurrence.due_date,
+                MaintenanceOccurrence.amount,
+            )
         )
     ).all()
     maintenance_open_total = 0
     maintenance_overdue_total = 0
     maintenance_month_estimated = Decimal("0")
     for status_value, due_date_value, amount_value in maintenance_rows:
-        status_enum = status_value if isinstance(status_value, MaintenanceStatus) else MaintenanceStatus(status_value)
-        is_open = status_enum == MaintenanceStatus.OPEN
+        status_enum = (
+            status_value
+            if isinstance(status_value, MaintenanceOccurrenceStatus)
+            else MaintenanceOccurrenceStatus(status_value)
+        )
+        is_open = status_enum == MaintenanceOccurrenceStatus.OPEN
         if is_open:
             maintenance_open_total += 1
         if is_open and due_date_value and due_date_value < today:

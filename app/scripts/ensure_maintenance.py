@@ -3,17 +3,16 @@ from __future__ import annotations
 import asyncio
 
 from ..db import AsyncSessionLocal
-from ..repositories.maintenance import VehicleMaintenanceRepository
+from ..services.maintenance import MaintenanceService
 
 
 async def main() -> None:
     async with AsyncSessionLocal() as session:
-        repo = VehicleMaintenanceRepository(session)
-        created = await repo.ensure_all_series_future(months_ahead=12)
+        service = MaintenanceService(session)
+        await service.ensure_for_filters()
         await session.commit()
-        print(f"Ensured recurring maintenance tasks. Created {created} future occurrences.")
+        print("Ensured recurring maintenance tasks within horizon.")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
