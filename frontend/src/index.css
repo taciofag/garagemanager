@@ -11,3 +11,23 @@ body,
 #root {
   height: 100%;
 }
+
+.dashboard-page.is-compact .kpi-card {
+  @apply p-2.5;
+}
+
+.dashboard-page.is-compact .kpi-title {
+  @apply text-[11px];
+}
+
+.dashboard-page.is-compact .kpi-value {
+  @apply text-lg;
+}
+
+.dashboard-page.is-compact .kpi-subtitle {
+  @apply text-[11px];
+}
+
+.dashboard-page.is-compact .dashboard-section {
+  @apply p-3;
+}

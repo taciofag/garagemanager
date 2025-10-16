@@ -1,443 +1,400 @@
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  type TooltipProps,
-} from 'recharts';
+import ptBR from 'date-fns/locale/pt-BR';
 
-import { SummaryApi, VehiclesApi, RentPaymentsApi } from '../api/resources';
+import { useDashboard, type DashboardPeriod } from '../hooks/useDashboard';
+import { KpiCard } from '../components/ui/KpiCard';
+import { Section } from '../components/ui/Section';
+import { AreaRent6M } from '../components/charts/AreaRent6M';
+import { DonutFleet } from '../components/charts/DonutFleet';
+import { toBRL, toInt } from '../utils/formatters';
 import { vehicleStatusLabel } from '../utils/labels';
-import { DataTable } from '../components/DataTable';
-import { Loading } from '../components/Loading';
-import { StatCard } from '../components/StatCard';
-import { PageHeader } from '../components/PageHeader';
-import type { RentPayment, Vehicle } from '../types';
+import type { RentPayment } from '../types';
 
-const currency = (value: string | number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value));
+const PERIOD_OPTIONS: Array<{ value: DashboardPeriod; label: string }> = [
+  { value: 'current-month', label: 'Mês atual' },
+  { value: 'last-3', label: 'Últimos 3' },
+  { value: 'last-6', label: 'Últimos 6' },
+  { value: 'ytd', label: 'YTD' },
+];
 
-const STATUS_COLORS = ['#2563eb', '#0ea5e9', '#9333ea', '#6366f1'];
+const KPI_TITLES = [
+  { id: 'fleet-total', title: 'Frota total' },
+  { id: 'fleet-stock', title: 'Em estoque' },
+  { id: 'fleet-rented', title: 'Alugados' },
+  { id: 'rent-forecast', title: 'Aluguel previsto (mês)' },
+  { id: 'rent-ytd', title: 'Receita de aluguel (YTD)' },
+  { id: 'rent-collected-month', title: 'Recebido (mês)' },
+  { id: 'cash-balance', title: 'Saldo em caixa' },
+  { id: 'maintenance-forecast', title: 'Previsto em manutenção (mês)' },
+];
 
-const renderFleetTooltip = ({ active, payload }: TooltipProps<number, string>) => {
-  if (!active || !payload?.length) {
-    return null;
-  }
+const KPI_PLACEHOLDER = KPI_TITLES.map((item) => ({ ...item, value: '--' }));
 
-  const { name, value, payload: datum } = payload[0];
-  const percentage = datum?.percentage as number | undefined;
-
-  return (
-    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 shadow-sm">
-      <p className="text-sm font-semibold text-slate-700">{name}</p>
-      <p className="mt-1 text-slate-600">
-        {value} veículos{percentage != null ? ` · ${percentage}%` : ''}
-      </p>
-    </div>
-  );
+const getErrorMessage = (error: unknown) => {
+  if (!error) return null;
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Erro inesperado.';
 };
 
-const Dashboard: React.FC = () => {
-  const summaryQuery = useQuery({ queryKey: ['summary'], queryFn: SummaryApi.get });
-  const vehiclesQuery = useQuery({
-    queryKey: ['vehicles', 'latest'],
-    queryFn: () => VehiclesApi.list({ page_size: 5, order_by: 'created_at', order_dir: 'desc' }),
-  });
-  const chargesQuery = useQuery({
-    queryKey: ['rent-payments', 'open'],
-    queryFn: () => RentPaymentsApi.list({ open_only: true, page_size: 5 }),
-  });
-
-  const summary = summaryQuery.data;
-
-  const vehicleStatusData = useMemo(() => {
-    if (!summary) {
-      return [] as Array<{ name: string; value: number; color: string; percentage: number }>;
+const formatPeriodRange = (payment: RentPayment) => {
+  try {
+    const start = new Date(payment.period_start);
+    const end = new Date(payment.period_end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return `${payment.period_start} - ${payment.period_end}`;
     }
 
-    const total = summary.vehicle_status_breakdown.reduce((acc, item) => acc + item.count, 0);
+    return `${format(start, "dd MMM", { locale: ptBR })} – ${format(end, "dd MMM", { locale: ptBR })}`;
+  } catch {
+    return `${payment.period_start} - ${payment.period_end}`;
+  }
+};
 
-    return summary.vehicle_status_breakdown.map((item, index) => {
-      const count = item.count;
-      const percentage = total ? Math.round((count / total) * 100) : 0;
-      return {
-        name: vehicleStatusLabel(item.status),
-        value: count,
-        color: STATUS_COLORS[index % STATUS_COLORS.length],
-        percentage,
-      };
-    });
-  }, [summary]);
+const SkeletonList: React.FC<{ rows?: number }> = ({ rows = 4 }) => (
+  <div className="flex flex-col gap-3">
+    {Array.from({ length: rows }).map((_, index) => (
+      <div key={index} className="h-12 animate-pulse rounded-lg bg-slate-200/70" />
+    ))}
+  </div>
+);
 
-  const totalFleet = useMemo(
-    () => vehicleStatusData.reduce((acc, item) => acc + item.value, 0),
-    [vehicleStatusData]
+const Dashboard: React.FC = () => {
+  const [period, setPeriod] = useState<DashboardPeriod>('current-month');
+  const [isCompact, setIsCompact] = useState(false);
+
+  const {
+    kpis,
+    rentSeries6M,
+    fleetBreakdown,
+    recentVehicles,
+    openBillings,
+    outstandingTotal,
+    loading,
+    isFetching,
+    errors,
+  } = useDashboard();
+
+  const displayKpis = kpis.length ? kpis : KPI_PLACEHOLDER;
+  const chartHeight = isCompact ? 200 : 220;
+  const fleetTotal = useMemo(
+    () => fleetBreakdown.reduce((acc, item) => acc + item.value, 0),
+    [fleetBreakdown]
   );
 
-  const rentSeries = useMemo(() => {
-    if (!summary) {
-      return [] as Array<{ label: string; Previsto: number; Recebido: number }>;
-    }
-    return summary.rent_collection_last_6_months.map((item) => ({
-      label: item.label,
-      Previsto: Number(item.due ?? 0),
-      Recebido: Number(item.collected ?? 0),
-    }));
-  }, [summary]);
+  const rentSeriesLoading = loading && rentSeries6M.length === 0;
+  const fleetLoading = loading && fleetBreakdown.length === 0;
+  const vehiclesLoading = loading && recentVehicles.length === 0;
+  const billingsLoading = loading && openBillings.length === 0;
 
-  const expenseSeries = useMemo(() => {
-    if (!summary) {
-      return [] as Array<{ label: string; Valor: number }>;
-    }
-    return summary.expenses_last_6_months.map((item) => ({
-      label: item.label,
-      Valor: Number(item.value ?? 0),
-    }));
-  }, [summary]);
+  const summaryError = getErrorMessage(errors.summary);
+  const vehiclesError = getErrorMessage(errors.vehicles);
+  const billingsError = getErrorMessage(errors.billings);
 
-  const expenseCategorySeries = useMemo(() => {
-    if (!summary) {
-      return [] as Array<{ label: string; Valor: number }>;
-    }
-    return summary.expenses_by_category_ytd.map((item) => ({
-      label: item.label,
-      Valor: Number(item.value ?? 0),
-    }));
-  }, [summary]);
+  const periodLabel =
+    PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? 'Período';
 
-  const partnerBalances = useMemo(() => {
-    if (!summary) {
-      return [] as Array<{ partner: string; Saldo: number; Aportes: number; Retiradas: number }>;
-    }
-    return summary.capital_balance_by_partner.map((item) => ({
-      partner: item.partner,
-      Saldo: Number(item.balance ?? 0),
-      Aportes: Number(item.contribution_total ?? 0),
-      Retiradas: Number(item.withdrawal_total ?? 0),
-    }));
-  }, [summary]);
-
-  const hasVehicleStatusData = vehicleStatusData.some((item) => item.value > 0);
-  const hasRentSeriesData = rentSeries.some((item) => item.Previsto > 0 || item.Recebido > 0);
-  const hasExpenseSeriesData = expenseSeries.some((item) => item.Valor > 0);
-  const hasExpenseCategoryData = expenseCategorySeries.some((item) => item.Valor > 0);
-  const hasPartnerData = partnerBalances.length > 0;
-
-  if (summaryQuery.isError) {
-    return <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">{String(summaryQuery.error)}</div>;
-  }
-  if (summaryQuery.isLoading || !summary) {
-    return <Loading label="Carregando dados do painel..." />;
-  }
-
-  const heroHighlights = [
-    { label: 'Frota total', value: totalFleet },
-    { label: 'Veículos em estoque', value: summary.total_vehicles_stock },
-    { label: 'Veículos alugados', value: summary.vehicles_rented },
-    { label: 'Receita de aluguel (YTD)', value: currency(summary.rent_collected_ytd) },
-    { label: 'Aluguel previsto (mês)', value: currency(summary.rent_due_current_month) },
-  ];
-
-  const operationalStats = [
-    { title: 'Veículos em estoque', value: summary.total_vehicles_stock },
-    { title: 'Veículos alugados', value: summary.vehicles_rented, tone: 'success' as const },
-    { title: 'Vendidos no ano', value: summary.vehicles_sold_ytd, tone: 'warning' as const },
-    {
-      title: 'Aluguéis em aberto',
-      value: summary.open_rent_payments,
-      subtitle: `Saldo: ${currency(summary.outstanding_rent_total)}`,
-      tone: 'warning' as const,
-    },
-    {
-      title: 'Manutenções abertas',
-      value: summary.maintenance_open_total,
-      subtitle: `Vencidas: ${summary.maintenance_overdue_total}`,
-      tone: summary.maintenance_overdue_total > 0 ? ('warning' as const) : undefined,
-    },
-  ];
-
-  const financialStats = [
-    { title: 'Capital aportado', value: currency(summary.capital_in_total) },
-    { title: 'Capital retirado', value: currency(summary.capital_out_total), tone: 'warning' as const },
-    { title: 'Receita de aluguel (YTD)', value: currency(summary.rent_collected_ytd), tone: 'success' as const },
-    { title: 'Aluguel recebido (mês)', value: currency(summary.rent_collected_current_month), tone: 'success' as const },
-    { title: 'Previsto em manutenção (mês)', value: currency(summary.maintenance_month_estimated), tone: 'warning' as const },
-    { title: 'Lucro em vendas (YTD)', value: currency(summary.profit_realized_sales_ytd) },
-    { title: 'Compras de veículos (YTD)', value: currency(summary.vehicle_purchase_outflow_ytd) },
-    { title: 'Receita com vendas (YTD)', value: currency(summary.vehicle_sale_revenue_ytd) },
-    {
-      title: 'Saldo em caixa',
-      value: currency(summary.cash_balance),
-      tone: Number(summary.cash_balance) >= 0 ? ('success' as const) : ('warning' as const),
-    },
-  ];
+  const visibleVehicles = recentVehicles.slice(0, 5);
+  const visibleBillings = openBillings.slice(0, 5);
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Visão geral do portfólio"
-        description="Acompanhe o desempenho da frota, receitas de aluguel e saúde financeira em tempo real."
-        metrics={heroHighlights.map((highlight) => ({
-          label: highlight.label,
-          value: highlight.value,
-        }))}
-      />
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="space-y-6">
+    <div className={`dashboard-page min-h-full pb-10 ${isCompact ? 'is-compact' : ''}`}>
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-3 pt-4 sm:gap-8 sm:px-4 lg:px-6">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 sm:pb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-700">Indicadores operacionais</h2>
-            <p className="text-sm text-slate-500">Visão rápida dos números que movimentam a frota.</p>
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {operationalStats.map((item) => (
-                <StatCard key={item.title} title={item.title} value={item.value} subtitle={item.subtitle} tone={item.tone} />
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h2 className="text-lg font-semibold text-slate-700">Indicadores financeiros</h2>
-            <p className="text-sm text-slate-500">Aporte de capital, receitas e liquidez do negócio.</p>
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-              {financialStats.map((item) => (
-                <StatCard key={item.title} title={item.title} value={item.value} subtitle={item.subtitle} tone={item.tone} />
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-700">Arrecadação de aluguel (últimos 6 meses)</h3>
-            <div className="flex items-center gap-4 text-xs text-slate-400">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-slate-400" /> Previsto
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-blue-500" /> Recebido
-              </span>
-            </div>
-          </div>
-          <div className="h-72">
-            {hasRentSeriesData ? (
-              <ResponsiveContainer>
-                <AreaChart data={rentSeries} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                  <defs>
-                    <linearGradient id="rentPrevisto" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#94a3b8" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="rentRecebido" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.45} />
-                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                  <XAxis dataKey="label" stroke="#94a3b8" tick={{ fontSize: 12 }} />
-                  <YAxis stroke="#94a3b8" tickFormatter={(value) => currency(value).replace('R$', '').trim()} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value: number) => currency(value)} />
-                  <Area type="monotone" dataKey="Previsto" stroke="#94a3b8" fill="url(#rentPrevisto)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="Recebido" stroke="#2563eb" fill="url(#rentRecebido)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">Sem registros de aluguel no período.</div>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-700">Distribuição da frota</h3>
-            <span className="text-xs uppercase tracking-wide text-slate-400">Total: {totalFleet}</span>
-          </div>
-          <div className="h-72">
-            {hasVehicleStatusData ? (
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie data={vehicleStatusData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95} paddingAngle={3}>
-                    {vehicleStatusData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={renderFleetTooltip} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">Sem dados de frota disponíveis.</div>
-            )}
-          </div>
-          {hasVehicleStatusData ? (
-            <ul className="mt-4 grid gap-2 text-sm text-slate-600">
-              {vehicleStatusData.map((item) => (
-                <li key={item.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span>{item.name}</span>
-                  </div>
-                  <span className="font-semibold text-slate-700">
-                    {item.value} veículos <span className="text-xs text-slate-400">({item.percentage}%)</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-700">Despesas recentes</h3>
-            <span className="text-xs uppercase tracking-wide text-slate-400">Últimos 6 meses</span>
-          </div>
-          <div className="h-64">
-            {hasExpenseSeriesData ? (
-              <ResponsiveContainer>
-                <BarChart data={expenseSeries} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                  <XAxis dataKey="label" stroke="#94a3b8" tick={{ fontSize: 12 }} />
-                  <YAxis stroke="#94a3b8" tickFormatter={(value) => currency(value).replace('R$', '').trim()} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value: number) => currency(value)} />
-                  <Bar dataKey="Valor" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">Sem despesas registradas no período.</div>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-4 text-base font-semibold text-slate-700">Despesas por categoria (YTD)</h3>
-          <div className="h-64">
-            {hasExpenseCategoryData ? (
-              <ResponsiveContainer>
-                <BarChart data={expenseCategorySeries} layout="vertical" margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                  <XAxis type="number" tickFormatter={(value) => currency(value).replace('R$', '').trim()} stroke="#94a3b8" />
-                  <YAxis type="category" dataKey="label" width={140} tick={{ fontSize: 12, fill: '#475569' }} />
-                  <Tooltip formatter={(value: number) => currency(value)} />
-                  <Bar dataKey="Valor" fill="#14b8a6" radius={[4, 4, 4, 4]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">Sem lançamentos no ano.</div>
-            )}
-          </div>
-          {hasExpenseCategoryData ? (
-            <p className="mt-4 text-sm text-slate-600">
-              Total no ano:{' '}
-              <span className="font-semibold text-slate-800">
-                {currency(summary.expenses_by_category_ytd_total)}
-              </span>
+            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Visão geral</h1>
+            <p className="text-sm text-slate-500">
+              Acompanhe métricas-chave da frota e fluxos de receita em tempo real.
             </p>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="mb-4 text-base font-semibold text-slate-700">Saldo por sócio</h3>
-        <div className="h-64">
-          {hasPartnerData ? (
-            <ResponsiveContainer>
-              <BarChart data={partnerBalances} layout="vertical" margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                <XAxis type="number" tickFormatter={(value) => currency(value).replace('R$', '').trim()} stroke="#94a3b8" />
-                <YAxis type="category" dataKey="partner" width={140} tick={{ fontSize: 12, fill: '#475569' }} />
-                <Tooltip formatter={(value: number) => currency(value)} />
-                <Bar dataKey="Saldo" fill="#f97316" radius={[4, 4, 4, 4]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-slate-400">Sem movimentos de capital registrados.</div>
-          )}
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-700">Novos veículos</h3>
-            <span className="text-xs uppercase tracking-wide text-slate-400">Atualizados recentemente</span>
           </div>
-          {vehiclesQuery.isLoading ? (
-            <Loading label="Carregando veículos..." />
-          ) : vehiclesQuery.isError ? (
-            <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">Erro ao carregar veículos.</div>
-          ) : (
-            <DataTable<Vehicle>
-              data={vehiclesQuery.data?.items ?? []}
-              columns={[
-                { header: 'ID', key: 'id' },
-                { header: 'Modelo', key: 'model' },
-                { header: 'Marca', key: 'make' },
-                {
-                  header: 'Status',
-                  key: 'status',
-                  render: (item) => vehicleStatusLabel(item.status),
-                },
-                {
-                  header: 'Compra',
-                  key: 'acquisition_price',
-                  render: (item) => currency(item.acquisition_price),
-                },
-              ]}
-            />
-          )}
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-700">Cobranças em aberto</h3>
-            <span className="text-xs uppercase tracking-wide text-slate-400">
-              Saldo: {currency(summary.outstanding_rent_total)}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <span className="font-medium text-slate-700">Período</span>
+              <select
+                value={period}
+                onChange={(event) => setPeriod(event.target.value as DashboardPeriod)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                {PERIOD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              Exportar
+            </button>
+            <label className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1 text-sm text-slate-600 transition hover:border-slate-200">
+              <input
+                type="checkbox"
+                checked={isCompact}
+                onChange={(event) => setIsCompact(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+              />
+              <span className="font-medium text-slate-700">Compacto</span>
+            </label>
           </div>
-          {chargesQuery.isLoading ? (
-            <Loading label="Carregando cobranças..." />
-          ) : chargesQuery.isError ? (
-            <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">Erro ao carregar cobranças.</div>
-          ) : (
-            <DataTable<RentPayment>
-              data={chargesQuery.data?.items ?? []}
-              columns={[
-                { header: 'ID', key: 'id' },
-                {
-                  header: 'Período',
-                  key: 'period_start',
-                  render: (item) => `${format(new Date(item.period_start), 'dd/MM')} - ${format(new Date(item.period_end), 'dd/MM')}`,
-                },
-                { header: 'Semanas', key: 'weeks' },
-                {
-                  header: 'Valor devido',
-                  key: 'due_amount',
-                  render: (item) => currency(item.due_amount),
-                },
-                {
-                  header: 'Saldo',
-                  key: 'balance',
-                  render: (item) => (
-                    <span className="font-semibold text-red-500">{currency(item.balance)}</span>
-                  ),
-                },
-              ]}
-            />
-          )}
+        </header>
+
+        <section aria-labelledby="dashboard-kpis">
+          <h2 id="dashboard-kpis" className="sr-only">
+            Indicadores principais
+          </h2>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 sm:gap-4">
+            {displayKpis.map((item) => (
+              <KpiCard
+                key={item.id}
+                title={item.title}
+                value={item.value}
+                loading={(loading || isFetching) && !kpis.length}
+              />
+            ))}
+          </div>
+        </section>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Section
+            title="Aluguel previsto x recebido"
+            description={`Período: ${periodLabel}`}
+            roleLabel="Gráfico de arrecadação de aluguel"
+          >
+            {summaryError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {summaryError}
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap items-center gap-3 text-xs uppercase tracking-wide text-slate-500">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden="true" />
+                    Previsto
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
+                    Recebido
+                  </span>
+                </div>
+                <AreaRent6M
+                  data={rentSeries6M}
+                  period={period}
+                  height={chartHeight}
+                  compact={isCompact}
+                  loading={rentSeriesLoading}
+                />
+              </>
+            )}
+          </Section>
+
+          <Section
+            title="Distribuição da frota"
+            description="Status atuais dos veículos"
+            actions={
+              fleetTotal ? (
+                <span className="text-sm font-medium text-slate-600">
+                  Total: {toInt(fleetTotal)} veículos
+                </span>
+              ) : undefined
+            }
+            roleLabel="Gráfico de distribuição da frota"
+          >
+            {summaryError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {summaryError}
+              </div>
+            ) : (
+              <DonutFleet
+                data={fleetBreakdown}
+                height={chartHeight}
+                loading={fleetLoading}
+              />
+            )}
+          </Section>
         </div>
-      </section>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-800">Atividade recente</h2>
+            {isFetching && !loading ? (
+              <span className="text-xs uppercase tracking-wide text-slate-400">Atualizando…</span>
+            ) : null}
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Section
+              title="Novos veículos"
+              description="Últimas entradas no estoque"
+              actions={
+                <Link
+                  to="/vehicles"
+                  className="text-sm font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  ver tudo
+                </Link>
+              }
+            >
+              {vehiclesError ? (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {vehiclesError}
+                </div>
+              ) : vehiclesLoading ? (
+                <SkeletonList rows={4} />
+              ) : visibleVehicles.length ? (
+                <>
+                  <div className="hidden overflow-hidden rounded-lg border border-slate-200 shadow-sm md:block">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">ID</th>
+                          <th className="px-4 py-3 font-semibold">Modelo</th>
+                          <th className="px-4 py-3 font-semibold">Marca</th>
+                          <th className="px-4 py-3 font-semibold">Status</th>
+                          <th className="px-4 py-3 font-semibold text-right">Compra</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {visibleVehicles.map((vehicle) => (
+                          <tr key={vehicle.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-slate-600">{vehicle.id}</td>
+                            <td className="px-4 py-3 font-medium text-slate-700">{vehicle.model}</td>
+                            <td className="px-4 py-3 text-slate-600">{vehicle.make}</td>
+                            <td className="px-4 py-3 text-slate-600">{vehicleStatusLabel(vehicle.status)}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                              {toBRL(vehicle.acquisition_price)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="space-y-3 md:hidden" role="list" aria-label="Novos veículos">
+                    {visibleVehicles.map((vehicle) => (
+                      <div
+                        key={vehicle.id}
+                        role="listitem"
+                        className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+                      >
+                        <div className="text-xs uppercase tracking-wide text-slate-400">#{vehicle.id}</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-800">
+                          {vehicle.make} {vehicle.model}
+                        </div>
+                        <dl className="mt-2 space-y-1 text-xs text-slate-500">
+                          <div className="flex items-center justify-between">
+                            <dt>Status</dt>
+                            <dd className="font-medium text-slate-700">{vehicleStatusLabel(vehicle.status)}</dd>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <dt>Compra</dt>
+                            <dd className="font-semibold text-slate-800">{toBRL(vehicle.acquisition_price)}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
+                  Nenhum veículo recente.
+                </div>
+              )}
+            </Section>
+
+            <Section
+              title="Cobranças em aberto"
+              description="Pagamentos de aluguel pendentes"
+              actions={
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-slate-600">
+                    Saldo: {outstandingTotal}
+                  </span>
+                  <Link
+                    to="/rent-payments"
+                    className="text-sm font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  >
+                    ver tudo
+                  </Link>
+                </div>
+              }
+            >
+              {billingsError ? (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {billingsError}
+                </div>
+              ) : billingsLoading ? (
+                <SkeletonList rows={4} />
+              ) : visibleBillings.length ? (
+                <>
+                  <div className="hidden overflow-hidden rounded-lg border border-slate-200 shadow-sm md:block">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">ID</th>
+                          <th className="px-4 py-3 font-semibold">Período</th>
+                          <th className="px-4 py-3 font-semibold text-center">Semanas</th>
+                          <th className="px-4 py-3 font-semibold text-right">Valor devido</th>
+                          <th className="px-4 py-3 font-semibold text-right">Saldo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {visibleBillings.map((billing) => (
+                          <tr key={billing.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-slate-600">{billing.id}</td>
+                            <td className="px-4 py-3 text-slate-600">{formatPeriodRange(billing)}</td>
+                            <td className="px-4 py-3 text-center text-slate-600">{billing.weeks}</td>
+                            <td className="px-4 py-3 text-right text-slate-600">{toBRL(billing.due_amount)}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-red-500">
+                              {toBRL(billing.balance)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="space-y-3 md:hidden" role="list" aria-label="Cobranças em aberto">
+                    {visibleBillings.map((billing) => (
+                      <div
+                        key={billing.id}
+                        role="listitem"
+                        className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+                      >
+                        <div className="text-xs uppercase tracking-wide text-slate-400">#{billing.id}</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-800">
+                          {formatPeriodRange(billing)}
+                        </div>
+                        <dl className="mt-2 space-y-1 text-xs text-slate-500">
+                          <div className="flex items-center justify-between">
+                            <dt>Semanas</dt>
+                            <dd className="font-medium text-slate-700">{billing.weeks}</dd>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <dt>Devido</dt>
+                            <dd className="font-semibold text-slate-800">{toBRL(billing.due_amount)}</dd>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <dt>Saldo</dt>
+                            <dd className="font-semibold text-red-500">{toBRL(billing.balance)}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">
+                  Nenhuma cobrança pendente no momento.
+                </div>
+              )}
+            </Section>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
