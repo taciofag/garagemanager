@@ -200,10 +200,24 @@ const Drivers: React.FC = () => {
         ) : (
           <DataTable<Driver>
             data={driversQuery.data?.items ?? []}
+            mobileAriaLabel="Motoristas cadastrados"
             columns={[
-              { header: 'ID', key: 'id' },
-              { header: 'Nome', key: 'name' },
-              { header: 'Telefone', key: 'phone' },
+              {
+                header: 'ID',
+                key: 'id',
+                hideOnMobile: true,
+                mobileLabel: 'Código',
+              },
+              {
+                header: 'Nome',
+                key: 'name',
+                isPrimary: true,
+              },
+              {
+                header: 'Telefone',
+                key: 'phone',
+                mobileLabel: 'Telefone',
+              },
               {
                 header: 'Status',
                 key: 'status',
@@ -212,7 +226,12 @@ const Drivers: React.FC = () => {
               {
                 header: 'Semanal',
                 key: 'weekly_rate',
-                render: (item) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.weekly_rate)),
+                render: (item) =>
+                  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                    Number(item.weekly_rate),
+                  ),
+                align: 'right',
+                mobileLabel: 'Semanal',
               },
               {
                 header: 'Ações',
@@ -255,6 +274,8 @@ const Drivers: React.FC = () => {
                     </button>
                   </div>
                 ),
+                mobileLabel: 'Ações',
+                mobileClassName: 'space-y-2 text-sm',
               },
             ]}
           />

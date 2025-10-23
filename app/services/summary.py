@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -57,12 +57,18 @@ def _month_label(reference: date) -> str:
     return reference.strftime("%b/%y")
 
 
+def _ensure_decimal(value: Decimal | int | float | None) -> Decimal:
+    if isinstance(value, Decimal):
+        return value
+    if value is None:
+        return Decimal("0")
+    return Decimal(str(value))
+
+
 async def get_summary(session: AsyncSession, today: date | None = None) -> SummaryResponse:
     today = today or date.today()
     year_start = date(today.year, 1, 1)
 
-    total_stock = await session.scalar(select(func.count()).where(Vehicle.status == VehicleStatus.STOCK))
-    vehicles_rented = await session.scalar(select(func.count()).where(Vehicle.status == VehicleStatus.RENTED))
     vehicles_sold_ytd = await session.scalar(
         select(func.count()).where(
             and_(
@@ -71,13 +77,6 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
                 Vehicle.sale_date <= today,
             )
         )
-    )
-
-    capital_in_total = await session.scalar(
-        select(func.coalesce(func.sum(CapitalEntry.amount), 0)).where(CapitalEntry.type == CapitalType.CONTRIBUTION)
-    )
-    capital_out_total = await session.scalar(
-        select(func.coalesce(func.sum(CapitalEntry.amount), 0)).where(CapitalEntry.type == CapitalType.WITHDRAWAL)
     )
 
     rent_collected_ytd = await session.scalar(
@@ -121,34 +120,47 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         SummaryVehicleStatus(status=status_key, count=count)
         for status_key, count in status_counts.items()
     ]
+    total_stock = status_counts.get(VehicleStatus.STOCK.value, 0)
+    vehicles_rented = status_counts.get(VehicleStatus.RENTED.value, 0)
 
     # Cash balance
-    cash_in = await session.scalar(
-        select(func.coalesce(func.sum(CashTxn.amount), 0)).where(CashTxn.type == CashTxnType.INFLOW)
+    cash_totals = await session.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    case((CashTxn.type == CashTxnType.INFLOW, CashTxn.amount), else_=0)
+                ),
+                0,
+            ),
+            func.coalesce(
+                func.sum(
+                    case((CashTxn.type == CashTxnType.OUTFLOW, CashTxn.amount), else_=0)
+                ),
+                0,
+            ),
+        )
     )
-    cash_out = await session.scalar(
-        select(func.coalesce(func.sum(CashTxn.amount), 0)).where(CashTxn.type == CashTxnType.OUTFLOW)
-    )
-    cash_balance = quantize_decimal(Decimal(cash_in or 0) - Decimal(cash_out or 0)) or Decimal("0")
+    cash_in_raw, cash_out_raw = cash_totals.one()
+    cash_in = _ensure_decimal(cash_in_raw)
+    cash_out = _ensure_decimal(cash_out_raw)
+    cash_balance = quantize_decimal(cash_in - cash_out) or Decimal("0")
 
     # Outstanding rent
-    open_rows = (
-        await session.execute(
-            select(RentPayment.due_amount, RentPayment.late_fee, RentPayment.paid_amount).where(
-                (RentPayment.due_amount + RentPayment.late_fee) > RentPayment.paid_amount
-            )
+    due_expr = func.coalesce(RentPayment.due_amount, 0)
+    late_fee_expr = func.coalesce(RentPayment.late_fee, 0)
+    paid_expr = func.coalesce(RentPayment.paid_amount, 0)
+    balance_expr = due_expr + late_fee_expr - paid_expr
+
+    outstanding_row = await session.execute(
+        select(
+            func.coalesce(func.sum(case((balance_expr > 0, balance_expr), else_=0)), 0),
+            func.coalesce(func.sum(case(((due_expr + late_fee_expr) > paid_expr, 1), else_=0)), 0),
         )
-    ).all()
-    outstanding_total = Decimal("0")
-    for due, late_fee, paid in open_rows:
-        due_val = Decimal(due or 0)
-        late_val = Decimal(late_fee or 0)
-        paid_val = Decimal(paid or 0)
-        balance = due_val + late_val - paid_val
-        if balance > 0:
-            outstanding_total += balance
-    outstanding_rent_total = quantize_decimal(outstanding_total) or Decimal("0")
-    open_rent_payments = len(open_rows)
+    )
+    outstanding_total_raw, open_rent_payments_raw = outstanding_row.one()
+    outstanding_total_decimal = _ensure_decimal(outstanding_total_raw)
+    outstanding_rent_total = quantize_decimal(outstanding_total_decimal) or Decimal("0")
+    open_rent_payments = int(open_rent_payments_raw or 0)
 
     # Monthly series (last 6 months)
     month_starts = _recent_month_starts(today)
@@ -169,8 +181,8 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         if not period_start:
             continue
         key = (period_start.year, period_start.month)
-        due_val = Decimal(due_amount or 0)
-        late_val = Decimal(late_fee or 0)
+        due_val = _ensure_decimal(due_amount)
+        late_val = _ensure_decimal(late_fee)
         due_map[key] += due_val + late_val
 
     rent_paid_rows = (
@@ -187,7 +199,7 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         if not payment_date:
             continue
         key = (payment_date.year, payment_date.month)
-        collected_map[key] += Decimal(paid_amount or 0)
+        collected_map[key] += _ensure_decimal(paid_amount)
 
     expense_rows = (
         await session.execute(
@@ -198,7 +210,7 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         if not expense_date:
             continue
         key = (expense_date.year, expense_date.month)
-        expense_map[key] += Decimal(amount or 0)
+        expense_map[key] += _ensure_decimal(amount)
 
     rent_collection_last_6_months: list[SummaryRentSeriesPoint] = []
     expenses_last_6_months: list[SummaryValuePoint] = []
@@ -221,15 +233,15 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
     # Expenses grouped by category (YTD)
     category_rows = (
         await session.execute(
-            select(Expense.category, func.coalesce(func.sum(Expense.amount), 0)).where(
-                and_(Expense.date >= year_start, Expense.date <= today)
-            ).group_by(Expense.category)
-    )
+            select(Expense.category, func.coalesce(func.sum(Expense.amount), 0))
+            .where(and_(Expense.date >= year_start, Expense.date <= today))
+            .group_by(Expense.category)
+        )
     ).all()
     expenses_by_category_ytd: list[SummaryValuePoint] = []
     expenses_by_category_ytd_total = Decimal("0")
     for category, total in category_rows:
-        decimal_total = quantize_decimal(Decimal(total or 0)) or Decimal("0")
+        decimal_total = quantize_decimal(_ensure_decimal(total)) or Decimal("0")
         expenses_by_category_ytd_total += decimal_total
         label = (
             EXPENSE_CATEGORY_LABELS.get(category) if isinstance(category, ExpenseCategory) else str(category)
@@ -254,13 +266,16 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         )
     ).all()
     capital_totals: dict[str, dict[str, Decimal]] = {}
+    capital_overall = {"contribution": Decimal("0"), "withdrawal": Decimal("0")}
     for partner, entry_type, amount in capital_rows:
         bucket = capital_totals.setdefault(partner, {"contribution": Decimal("0"), "withdrawal": Decimal("0")})
-        decimal_amount = Decimal(amount or 0)
+        decimal_amount = _ensure_decimal(amount)
         if entry_type == CapitalType.CONTRIBUTION:
             bucket["contribution"] += decimal_amount
+            capital_overall["contribution"] += decimal_amount
         else:
             bucket["withdrawal"] += decimal_amount
+            capital_overall["withdrawal"] += decimal_amount
     capital_balance_by_partner = [
         SummaryPartnerBalance(
             partner=partner,
@@ -270,6 +285,8 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         )
         for partner, values in sorted(capital_totals.items())
     ]
+    capital_in_total = quantize_decimal(capital_overall["contribution"]) or Decimal("0")
+    capital_out_total = quantize_decimal(capital_overall["withdrawal"]) or Decimal("0")
 
     current_month_key = (today.year, today.month)
     rent_due_current_month = quantize_decimal(due_map[current_month_key]) or Decimal("0")
@@ -294,33 +311,36 @@ async def get_summary(session: AsyncSession, today: date | None = None) -> Summa
         )
     )
 
-    maintenance_rows = (
-        await session.execute(
-            select(
-                MaintenanceOccurrence.status,
-                MaintenanceOccurrence.due_date,
-                MaintenanceOccurrence.amount,
-            )
-        )
-    ).all()
-    maintenance_open_total = 0
-    maintenance_overdue_total = 0
-    maintenance_month_estimated = Decimal("0")
-    for status_value, due_date_value, amount_value in maintenance_rows:
-        status_enum = (
-            status_value
-            if isinstance(status_value, MaintenanceOccurrenceStatus)
-            else MaintenanceOccurrenceStatus(status_value)
-        )
-        is_open = status_enum == MaintenanceOccurrenceStatus.OPEN
-        if is_open:
-            maintenance_open_total += 1
-        if is_open and due_date_value and due_date_value < today:
-            maintenance_overdue_total += 1
-        if is_open and due_date_value and due_date_value.year == today.year and due_date_value.month == today.month:
-            maintenance_month_estimated += Decimal(amount_value or 0)
-
-    maintenance_month_estimated = quantize_decimal(maintenance_month_estimated) or Decimal("0")
+    current_month_start = _month_start(today)
+    next_month_start = _next_month_start(current_month_start)
+    maintenance_stats = await session.execute(
+        select(
+            func.count(),
+            func.coalesce(
+                func.sum(case((MaintenanceOccurrence.due_date < today, 1), else_=0)),
+                0,
+            ),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                MaintenanceOccurrence.due_date >= current_month_start,
+                                MaintenanceOccurrence.due_date < next_month_start,
+                            ),
+                            MaintenanceOccurrence.amount,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ),
+        ).where(MaintenanceOccurrence.status == MaintenanceOccurrenceStatus.OPEN)
+    )
+    maintenance_open_raw, maintenance_overdue_raw, maintenance_month_raw = maintenance_stats.one()
+    maintenance_open_total = int(maintenance_open_raw or 0)
+    maintenance_overdue_total = int(maintenance_overdue_raw or 0)
+    maintenance_month_estimated = quantize_decimal(_ensure_decimal(maintenance_month_raw)) or Decimal("0")
 
     return SummaryResponse(
         total_vehicles_stock=int(total_stock or 0),

@@ -952,38 +952,57 @@ const RentPayments: React.FC = () => {
         ) : (
           <DataTable<RentPaymentRow>
             data={paymentRows}
+            mobileAriaLabel="Cobranças registradas"
             columns={[
-              { header: 'ID', key: 'id' },
-              { header: 'Contrato', key: 'rental_id' },
+              {
+                header: 'ID',
+                key: 'id',
+                hideOnMobile: true,
+                mobileLabel: 'Código',
+              },
+              {
+                header: 'Contrato',
+                key: 'rental_id',
+                isPrimary: true,
+              },
               {
                 header: 'Período',
                 key: 'period',
                 render: (item) => formatPeriod(item.period_start, item.period_end),
+                mobileLabel: 'Período',
               },
               {
                 header: 'Semana',
                 key: 'weekNumber',
                 render: (item) => (item.weekNumber ? `#${item.weekNumber}` : item.weeks ?? 1),
+                mobileLabel: 'Semana',
               },
               {
                 header: 'Previsto',
                 key: 'dueWithLate',
                 render: (item) => formatCurrency(item.dueWithLate),
+                align: 'right',
+                mobileLabel: 'Previsto',
               },
               {
                 header: 'Pago',
                 key: 'paid_amount',
                 render: (item) => formatCurrency(item.paid_amount),
+                align: 'right',
+                mobileLabel: 'Pago',
               },
               {
                 header: 'Saldo',
                 key: 'balance',
                 render: (item) => formatCurrency(item.balance),
+                align: 'right',
+                mobileLabel: 'Saldo',
               },
               {
                 header: 'Pago em',
                 key: 'payment_date',
                 render: (item) => formatDateDisplay(item.payment_date),
+                mobileLabel: 'Pago em',
               },
               {
                 header: 'Ações',
@@ -1011,6 +1030,8 @@ const RentPayments: React.FC = () => {
                     </button>
                   </div>
                 ),
+                mobileLabel: 'Ações',
+                mobileClassName: 'space-y-2 text-sm',
               },
             ]}
           />

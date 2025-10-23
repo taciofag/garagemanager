@@ -229,19 +229,39 @@ const Expenses: React.FC = () => {
         ) : (
           <DataTable<Expense>
             data={expensesQuery.data?.items ?? []}
+            mobileAriaLabel="Despesas recentes"
             columns={[
-              { header: 'ID', key: 'id' },
-              { header: 'Veículo', key: 'vehicle_id' },
+              {
+                header: 'ID',
+                key: 'id',
+                hideOnMobile: true,
+                mobileLabel: 'Código',
+              },
+              {
+                header: 'Veículo',
+                key: 'vehicle_id',
+                mobileLabel: 'Veículo',
+              },
               {
                 header: 'Categoria',
                 key: 'category',
                 render: (item) => expenseCategoryLabel(item.category),
+                mobileLabel: 'Categoria',
               },
-              { header: 'Descrição', key: 'description' },
+              {
+                header: 'Descrição',
+                key: 'description',
+                isPrimary: true,
+              },
               {
                 header: 'Valor',
                 key: 'amount',
-                render: (item) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.amount)),
+                render: (item) =>
+                  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                    Number(item.amount),
+                  ),
+                align: 'right',
+                mobileLabel: 'Valor',
               },
               {
                 header: 'Ações',
@@ -269,6 +289,8 @@ const Expenses: React.FC = () => {
                     </button>
                   </div>
                 ),
+                mobileLabel: 'Ações',
+                mobileClassName: 'space-y-2 text-sm',
               },
             ]}
           />

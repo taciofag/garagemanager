@@ -44,10 +44,8 @@
         # same-origin via /api (vai ser proxy no Nginx)
         VITE_API_BASE_URL: ${FRONTEND_API_BASE_URL:-/api}
     container_name: garage_frontend
-    # publicar para a internet
-    ports:
-      - "80:80"
-      - "443:443"
+    expose:
+      - "80"
     depends_on:
       - api
     volumes:

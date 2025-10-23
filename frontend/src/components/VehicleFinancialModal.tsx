@@ -79,26 +79,28 @@ export const VehicleFinancialModal: React.FC<VehicleFinancialModalProps> = ({ is
                   </div>
                 ) : (
                   <div className="overflow-hidden rounded-md border border-slate-200">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm">
-                      <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2">Data</th>
-                          <th className="px-3 py-2">Categoria</th>
-                          <th className="px-3 py-2">Descrição</th>
-                          <th className="px-3 py-2 text-right">Valor</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {summary.expenses.map((expense) => (
-                          <tr key={expense.id}>
-                            <td className="px-3 py-2 text-slate-600">{format(new Date(expense.date), 'dd/MM/yyyy')}</td>
-                            <td className="px-3 py-2 text-slate-600">{expense.category}</td>
-                            <td className="px-3 py-2 text-slate-600">{expense.description}</td>
-                            <td className="px-3 py-2 text-right font-medium text-slate-700">{currencyBRL(expense.amount)}</td>
+                    <div className="w-full overflow-x-auto">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2">Data</th>
+                            <th className="px-3 py-2">Categoria</th>
+                            <th className="px-3 py-2">Descrição</th>
+                            <th className="px-3 py-2 text-right">Valor</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {summary.expenses.map((expense) => (
+                            <tr key={expense.id}>
+                              <td className="px-3 py-2 text-slate-600">{format(new Date(expense.date), 'dd/MM/yyyy')}</td>
+                              <td className="px-3 py-2 text-slate-600">{expense.category}</td>
+                              <td className="px-3 py-2 text-slate-600">{expense.description}</td>
+                              <td className="px-3 py-2 text-right font-medium text-slate-700">{currencyBRL(expense.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </section>
@@ -129,30 +131,32 @@ export const VehicleFinancialModal: React.FC<VehicleFinancialModalProps> = ({ is
                         {rental.payments.length === 0 ? (
                           <div className="px-4 py-3 text-sm text-slate-500">Sem cobranças geradas.</div>
                         ) : (
-                          <table className="min-w-full divide-y divide-slate-200 text-sm">
-                            <thead className="bg-white text-left text-xs uppercase tracking-wide text-slate-500">
-                              <tr>
-                                <th className="px-3 py-2">Período</th>
-                                <th className="px-3 py-2 text-right">Devido</th>
-                                <th className="px-3 py-2 text-right">Pago</th>
-                                <th className="px-3 py-2 text-right">Multa</th>
-                                <th className="px-3 py-2 text-right">Saldo</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {rental.payments.map((payment) => (
-                                <tr key={payment.id}>
-                                  <td className="px-3 py-2 text-slate-600">
-                                    {format(new Date(payment.period_start), 'dd/MM/yyyy')} - {format(new Date(payment.period_end), 'dd/MM/yyyy')}
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-slate-600">{currencyBRL(payment.due_amount)}</td>
-                                  <td className="px-3 py-2 text-right text-slate-600">{currencyBRL(payment.paid_amount)}</td>
-                                  <td className="px-3 py-2 text-right text-slate-600">{currencyBRL(payment.late_fee)}</td>
-                                  <td className="px-3 py-2 text-right font-medium text-slate-700">{currencyBRL(payment.balance)}</td>
+                          <div className="w-full overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-white text-left text-xs uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th className="px-3 py-2">Período</th>
+                                  <th className="px-3 py-2 text-right">Devido</th>
+                                  <th className="px-3 py-2 text-right">Pago</th>
+                                  <th className="px-3 py-2 text-right">Multa</th>
+                                  <th className="px-3 py-2 text-right">Saldo</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {rental.payments.map((payment) => (
+                                  <tr key={payment.id}>
+                                    <td className="px-3 py-2 text-slate-600">
+                                      {format(new Date(payment.period_start), 'dd/MM/yyyy')} - {format(new Date(payment.period_end), 'dd/MM/yyyy')}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-slate-600">{currencyBRL(payment.due_amount)}</td>
+                                    <td className="px-3 py-2 text-right text-slate-600">{currencyBRL(payment.paid_amount)}</td>
+                                    <td className="px-3 py-2 text-right text-slate-600">{currencyBRL(payment.late_fee)}</td>
+                                    <td className="px-3 py-2 text-right font-medium text-slate-700">{currencyBRL(payment.balance)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
                       </div>
                     ))}

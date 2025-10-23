@@ -407,10 +407,24 @@ const Vehicles: React.FC = () => {
         ) : (
           <DataTable<Vehicle>
             data={vehiclesQuery.data?.items ?? []}
+            mobileAriaLabel="Veículos cadastrados"
             columns={[
-              { header: 'ID', key: 'id' },
-              { header: 'Placa', key: 'plate' },
-              { header: 'Modelo', key: 'model' },
+              {
+                header: 'ID',
+                key: 'id',
+                mobileLabel: 'Código',
+                hideOnMobile: true,
+              },
+              {
+                header: 'Placa',
+                key: 'plate',
+                mobileLabel: 'Placa',
+              },
+              {
+                header: 'Modelo',
+                key: 'model',
+                isPrimary: true,
+              },
               {
                 header: 'Anos',
                 key: 'years',
@@ -436,6 +450,8 @@ const Vehicles: React.FC = () => {
                 header: 'Total gasto',
                 key: 'total_cost',
                 render: (item) => currency(item.total_cost),
+                align: 'right',
+                mobileLabel: 'Total gasto',
               },
               {
                 header: 'Ações',
@@ -494,6 +510,8 @@ const Vehicles: React.FC = () => {
                     </button>
                   </div>
                 ),
+                mobileLabel: 'Ações',
+                mobileClassName: 'space-y-2 text-sm',
               },
             ]}
           />

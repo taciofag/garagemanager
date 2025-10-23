@@ -100,8 +100,8 @@ const Dashboard: React.FC = () => {
   const visibleBillings = openBillings.slice(0, 5);
 
   return (
-    <div className={`dashboard-page min-h-full pb-10 ${isCompact ? 'is-compact' : ''}`}>
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-3 pt-4 sm:gap-8 sm:px-4 lg:px-6">
+    <div className={`dashboard-page min-h-full ${isCompact ? 'is-compact' : ''}`}>
+      <div className="flex flex-col gap-6 pt-4 sm:gap-8">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 sm:pb-4">
           <div>
             <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Visão geral</h1>

@@ -265,8 +265,14 @@ const Rentals: React.FC = () => {
         ) : (
           <DataTable<Rental>
             data={rentalsQuery.data?.items ?? []}
+            mobileAriaLabel="Contratos registrados"
             columns={[
-              { header: 'ID', key: 'id' },
+              {
+                header: 'ID',
+                key: 'id',
+                hideOnMobile: true,
+                mobileLabel: 'Código',
+              },
               {
                 header: 'Veículo',
                 key: 'vehicle_id',
@@ -278,21 +284,29 @@ const Rentals: React.FC = () => {
                   const plate = vehicleInfo.plate ? vehicleInfo.plate.toUpperCase() : null;
                   return plate ? `${plate} — ${vehicleInfo.label}` : vehicleInfo.label;
                 },
+                isPrimary: true,
               },
               {
                 header: 'Motorista',
                 key: 'driver_id',
                 render: (item) => driversById[item.driver_id] ?? item.driver_id,
+                mobileLabel: 'Motorista',
               },
               {
                 header: 'Status',
                 key: 'status',
                 render: (item) => rentalStatusLabel(item.status),
+                mobileLabel: 'Status',
               },
               {
                 header: 'Semanal',
                 key: 'weekly_rate',
-                render: (item) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.weekly_rate)),
+                render: (item) =>
+                  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                    Number(item.weekly_rate),
+                  ),
+                align: 'right',
+                mobileLabel: 'Semanal',
               },
               {
                 header: 'Ações',
@@ -347,6 +361,8 @@ const Rentals: React.FC = () => {
                     </button>
                   </div>
                 ),
+                mobileLabel: 'Ações',
+                mobileClassName: 'space-y-2 text-sm',
               },
             ]}
           />

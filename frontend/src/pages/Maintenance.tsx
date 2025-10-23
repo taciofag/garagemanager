@@ -426,42 +426,56 @@ const Maintenance: React.FC = () => {
       <>
         <DataTable<MaintenanceOccurrence>
           data={occurrences}
+          mobileAriaLabel="Ocorrências de manutenção"
           columns={[
             {
               header: 'Veículo',
               key: 'vehicle_id',
               render: (item) => <span className="font-medium text-slate-700">{item.vehicle_label}</span>,
+              isPrimary: true,
             },
-            { header: 'Título', key: 'title' },
+            {
+              header: 'Título',
+              key: 'title',
+              mobileLabel: 'Título',
+            },
             {
               header: 'Categoria',
               key: 'category',
               render: (item) => item.category || '—',
+              mobileLabel: 'Categoria',
             },
             {
               header: 'Fornecedor',
               key: 'supplier',
               render: (item) => item.supplier_name || '—',
+              mobileLabel: 'Fornecedor',
             },
             {
               header: 'Previsto',
               key: 'due_date',
               render: (item) => (item.due_date ? format(parseISO(item.due_date), 'dd/MM/yyyy') : '—'),
+              mobileLabel: 'Previsto',
             },
             {
               header: 'Pago em',
               key: 'paid_at',
               render: (item) => (item.paid_at ? format(parseISO(item.paid_at), 'dd/MM/yyyy') : '—'),
+              mobileLabel: 'Pago em',
+              hideOnMobile: true,
             },
             {
               header: 'Frequência',
               key: 'frequency',
               render: (item) => FREQUENCY_LABELS[item.frequency],
+              hideOnMobile: true,
             },
             {
               header: 'Valor',
               key: 'amount',
               render: (item) => formatCurrency(item.amount),
+              align: 'right',
+              mobileLabel: 'Valor',
             },
             {
               header: 'Status',
@@ -471,6 +485,7 @@ const Maintenance: React.FC = () => {
                   {STATUS_LABELS[item.status]}
                 </span>
               ),
+              mobileLabel: 'Status',
             },
             {
               header: 'Observação',
@@ -480,7 +495,7 @@ const Maintenance: React.FC = () => {
                   return '—';
                 }
                 return (
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1 text-sm text-slate-600">
                     {item.note ? <span>{item.note}</span> : null}
                     {item.cash_txn_id ? (
                       <span className="text-[11px] text-slate-500">Caixa: {item.cash_txn_id}</span>
@@ -488,6 +503,7 @@ const Maintenance: React.FC = () => {
                   </div>
                 );
               },
+              mobileLabel: 'Observação',
             },
             {
               header: 'Ações',
@@ -523,6 +539,8 @@ const Maintenance: React.FC = () => {
                   ) : null}
                 </div>
               ),
+              mobileLabel: 'Ações',
+              mobileClassName: 'space-y-2 text-sm',
             },
           ]}
         />

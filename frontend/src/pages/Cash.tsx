@@ -253,22 +253,35 @@ const Cash: React.FC = () => {
         ) : (
           <DataTable<CashTxn>
             data={cashQuery.data?.items ?? []}
+            mobileAriaLabel="Transações de caixa"
             columns={[
-              { header: 'ID', key: 'id' },
+              {
+                header: 'ID',
+                key: 'id',
+                hideOnMobile: true,
+                mobileLabel: 'Código',
+              },
               {
                 header: 'Tipo',
                 key: 'type',
                 render: (item) => cashTypeLabel(item.type),
+                mobileLabel: 'Tipo',
               },
               {
                 header: 'Categoria',
                 key: 'category',
                 render: (item) => item.category?.name ?? '-',
+                isPrimary: true,
               },
               {
                 header: 'Valor',
                 key: 'amount',
-                render: (item) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.amount)),
+                render: (item) =>
+                  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                    Number(item.amount),
+                  ),
+                align: 'right',
+                mobileLabel: 'Valor',
               },
               {
                 header: 'Ações',
@@ -296,6 +309,8 @@ const Cash: React.FC = () => {
                     </button>
                   </div>
                 ),
+                mobileLabel: 'Ações',
+                mobileClassName: 'space-y-2 text-sm',
               },
             ]}
           />

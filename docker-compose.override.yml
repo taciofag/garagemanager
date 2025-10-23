@@ -1,0 +1,5 @@
+services:
+  frontend:
+    ports: []         # remove as publicações (80:80, 443:443)
+    expose:
+      - "80"          # opcional: documenta que o serviço expõe 80 internamente

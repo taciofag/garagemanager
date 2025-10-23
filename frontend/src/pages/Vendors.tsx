@@ -138,15 +138,30 @@ const Vendors: React.FC = () => {
         ) : (
           <DataTable<Vendor>
             data={vendorsQuery.data?.items ?? []}
+            mobileAriaLabel="Fornecedores cadastrados"
             columns={[
-              { header: 'ID', key: 'id' },
-              { header: 'Nome', key: 'name' },
+              {
+                header: 'ID',
+                key: 'id',
+                hideOnMobile: true,
+                mobileLabel: 'Código',
+              },
+              {
+                header: 'Nome',
+                key: 'name',
+                isPrimary: true,
+              },
               {
                 header: 'Tipo',
                 key: 'type',
                 render: (item) => vendorTypeLabel(item.type),
+                mobileLabel: 'Tipo',
               },
-              { header: 'Telefone', key: 'phone' },
+              {
+                header: 'Telefone',
+                key: 'phone',
+                mobileLabel: 'Telefone',
+              },
               {
                 header: 'Ações',
                 key: 'actions',
@@ -173,6 +188,8 @@ const Vendors: React.FC = () => {
                     </button>
                   </div>
                 ),
+                mobileLabel: 'Ações',
+                mobileClassName: 'space-y-2 text-sm',
               },
             ]}
           />

@@ -280,18 +280,34 @@ const Capital: React.FC = () => {
           ) : (
             <DataTable<CapitalEntry>
               data={capitalQuery.data?.items ?? []}
+              mobileAriaLabel="Histórico de capital"
               columns={[
-                { header: 'ID', key: 'id' },
-                { header: 'Sócio', key: 'partner' },
+                {
+                  header: 'ID',
+                  key: 'id',
+                  hideOnMobile: true,
+                  mobileLabel: 'Código',
+                },
+                {
+                  header: 'Sócio',
+                  key: 'partner',
+                  isPrimary: true,
+                },
                 {
                   header: 'Tipo',
                   key: 'type',
                   render: (item) => capitalTypeLabel(item.type),
+                  mobileLabel: 'Tipo',
                 },
                 {
                   header: 'Valor',
                   key: 'amount',
-                  render: (item) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.amount)),
+                  render: (item) =>
+                    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                      Number(item.amount),
+                    ),
+                  align: 'right',
+                  mobileLabel: 'Valor',
                 },
                 {
                   header: 'Ações',
@@ -319,6 +335,8 @@ const Capital: React.FC = () => {
                       </button>
                     </div>
                   ),
+                  mobileLabel: 'Ações',
+                  mobileClassName: 'space-y-2 text-sm',
                 },
               ]}
             />
